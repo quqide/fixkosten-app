@@ -1,0 +1,14 @@
+# Stack für Dockge. Den Pfad unter "volumes" an deinen Pool anpassen.
+services:
+  fixkosten:
+    image: ghcr.io/quqide/fixkosten-app:latest
+    container_name: fixkosten
+    restart: unless-stopped
+    ports:
+      - "3080:3000"
+    environment:
+      # Adresse, unter der du die App im Browser aufrufst
+      ORIGIN: http://truenas.local:3080
+      TZ: Europe/Berlin
+    volumes:
+      - /mnt/POOL/apps/fixkosten:/data
