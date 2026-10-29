@@ -4,17 +4,41 @@
 	import Ring from '#lib/components/Ring.svelte';
 	import Verlauf from '#lib/components/Verlauf.svelte';
 	import { betragFeld, datumKurz, datumLang, eur, eurGanz, inTagen, initiale, zeitpunkt } from '#lib/format.ts';
-	import { mitRueckmeldung } from '#lib/toast.svelte.ts';
+	import type { SubmitFunction } from '$app/forms';
+	import { mitRueckmeldung, zeigeToast } from '#lib/toast.svelte.ts';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
 
 	let kontostandOffen = $state(false);
-
 	const p = $derived(data.person);
 	const konto = $derived(p.modus === 1 ? 'Gehaltskonto' : 'Fixkosten-Konto');
 	const anteil = $derived(data.gemeinschaft.anteil[p.id]);
 	const v = $derived(data.vergleich);
+
+	let actualFormular = $state<HTMLFormElement>();
+	let actualLaeuft = $state(false);
+
+	const mitActual = $derived(data.actual && !!p.actualKontoId && !data.zeitreise);
+	const abgleich = $derived(p.istQuelle === 'actual' ? p.abgleich : null);
+	const offen = $derived(abgleich?.auftraege.filter((a) => !a.gebucht) ?? []);
+
+	// Einmal am Tag von selbst abrufen, danach auf Knopfdruck.
+	$effect(() => {
+		if (mitActual && actualFormular && !actualLaeuft && (p.istQuelle !== 'actual' || p.istDatum !== data.stichtag)) {
+			actualFormular.requestSubmit();
+		}
+	});
+
+	const actualAbruf: SubmitFunction = () => {
+		actualLaeuft = true;
+		return async ({ result, update }) => {
+			await update({ reset: false, invalidateAll: true });
+			actualLaeuft = false;
+			if (result.type === 'failure') zeigeToast((result.data?.fehler as string) ?? 'Abruf aus Actual fehlgeschlagen.');
+		};
+	};
+
 
 	const status = $derived.by(() => {
 		if (!v) return null;
@@ -88,6 +112,8 @@
 					<h2>Wie viel ist gerade auf dem {konto}?</h2>
 					{#if data.zeitreise}
 						<p>An diesem Tag sollten {eur(data.fixkosten.sollCent)} auf dem Konto sein.</p>
+					{:else if mitActual}
+						<p>Der Kontostand kommt gleich aus Actual Budget. Sein sollten es {eur(data.fixkosten.sollCent)}.</p>
 					{:else}
 						<p>Trag den Kontostand ein. Dann zeigt dir die App, ob alle kommenden Abbuchungen gedeckt sind. Sein sollten es {eur(data.fixkosten.sollCent)}.</p>
 					{/if}
@@ -95,7 +121,26 @@
 			</div>
 		{/if}
 
-		{#if (kontostandOffen || !v) && !data.zeitreise}
+		{#if mitActual}
+			<form class="actual" method="POST" action="?/actual" bind:this={actualFormular} use:enhance={actualAbruf}>
+				<div class="actual-text" aria-live="polite">
+					{#if actualLaeuft}
+						Kontostand wird aus Actual geholt …
+					{:else if abgleich}
+						<span>Aus Actual ({p.actualKontoName}), Stand {datumKurz(p.istDatum!)}.</span>
+						<span>{abgleich.gehalt ? `Gehalt am ${datumKurz(abgleich.gehalt.datum)} eingegangen.` : 'Gehalt diesen Monat noch nicht da.'}
+							{#if abgleich.gehalt}
+								{offen.length === 0 ? 'Alle Daueraufträge sind gebucht.' : `Noch offen: ${offen.map((a) => a.name).join(', ')}.`}
+							{/if}</span>
+					{:else}
+						Kontostand kommt aus Actual ({p.actualKontoName}).
+					{/if}
+				</div>
+				<button class="secondary" type="submit" disabled={actualLaeuft}>{actualLaeuft ? 'Lädt …' : 'Neu abrufen'}</button>
+			</form>
+		{/if}
+
+		{#if (kontostandOffen || (!v && !mitActual)) && !data.zeitreise}
 			<form class="kontostand" method="POST" action="?/kontostand" use:enhance={mitRueckmeldung(() => (kontostandOffen = false))}>
 				<div class="field">
 					<label for="ist">Kontostand {konto} heute</label>
@@ -117,9 +162,13 @@
 				<p>Für jede Fixkosten legst du jeden Monat einen Teil zurück, bei einer Jahreszahlung zum Beispiel ein Zwölftel. „Sollte da sein“ ist alles, was du seit der letzten Abbuchung schon angespart haben solltest.</p>
 				{#if v}
 					<p>
-						Den Kontostand hast du am {datumKurz(p.istDatum!)} eingetragen.
+						{#if p.istQuelle === 'actual'}
+							Der Kontostand kommt aus Actual Budget. Die App erkennt das Gehalt an einer Gutschrift von mindestens 70 % deines Nettos und die Daueraufträge am Betrag.
+						{:else}
+							Den Kontostand hast du am {datumKurz(p.istDatum!)} eingetragen.
+						{/if}
 						{#if data.ausstehendCent}Die noch offenen Daueraufträge ({eur(data.ausstehendCent)}) sind schon abgezogen.{/if}
-						<button type="button" class="textlink" onclick={() => (kontostandOffen = !kontostandOffen)}>Kontostand aktualisieren</button>
+						<button type="button" class="textlink" onclick={() => (kontostandOffen = !kontostandOffen)}>{mitActual ? 'Einmalig von Hand eintragen' : 'Kontostand aktualisieren'}</button>
 					</p>
 				{/if}
 			</div>
@@ -204,6 +253,9 @@
 	.badge.ueberdeckt { color: var(--calm); background: var(--calm-soft); }
 	.badge.unterdeckt { color: var(--warm); background: var(--warm-soft); }
 	.kontostand { border-top: 1px solid var(--separator); }
+	.actual { border-top: 1px solid var(--separator); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; padding: 14px 22px; }
+	.actual-text { display: grid; gap: 2px; font-size: 14px; color: var(--secondary); flex: 1 1 260px; }
+	.actual .secondary { min-height: 40px; }
 	.kontostand .field + .field { border-top: 0; padding-top: 0; }
 	details.explain { border-top: 1px solid var(--separator); }
 	summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; padding: 14px 22px; color: var(--tint); font-weight: 600; font-size: 15px; min-height: 48px; }

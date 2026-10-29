@@ -6,6 +6,7 @@ import {
 	vergleicheSollIst,
 	type Zeile
 } from '#lib/rechnung/index.ts';
+import { actualEingerichtet } from './actual.ts';
 import type { PersonId } from './db.ts';
 import {
 	ladeGemeinschaft,
@@ -57,9 +58,13 @@ export function personAnsicht(id: PersonId, stichtag: string) {
 		fixkostenMonatlichCent: fixkosten.summeMonatlichCent
 	});
 	const ausstehendCent =
-		person.modus === 1 && person.istAusstehend
-			? aufstellung.dauerauftraege.reduce((s, d) => s + d.betragCent, 0)
-			: 0;
+		person.modus !== 1
+			? 0
+			: person.istQuelle === 'actual'
+				? (person.abgleich?.ausstehendCent ?? 0)
+				: person.istAusstehend
+					? aufstellung.dauerauftraege.reduce((s, d) => s + d.betragCent, 0)
+					: 0;
 	const vergleich =
 		person.istCent == null
 			? null
@@ -84,6 +89,7 @@ export function personAnsicht(id: PersonId, stichtag: string) {
 		vergleich,
 		ausstehendCent,
 		naechste,
+		actual: actualEingerichtet(id),
 		verlauf: posten.length ? sollVerlauf(posten, stichtag, person.ueberweisungstag) : []
 	};
 }
