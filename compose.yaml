@@ -7,8 +7,10 @@ services:
     ports:
       - "3080:3000"
     environment:
-      # Adresse, unter der du die App im Browser aufrufst
-      ORIGIN: http://truenas.local:3080
       TZ: Europe/Berlin
+      # Später mit Authentik: Person aus dem Login übernehmen statt sie auszuwählen
+      # AUTH_HEADER: X-authentik-username
+      # PERSON_A_USER: stephan
+      # PERSON_B_USER: partnerin
     volumes:
       - /mnt/POOL/apps/fixkosten:/data

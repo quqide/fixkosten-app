@@ -1,0 +1,88 @@
+import { DatabaseSync } from 'node:sqlite';
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+
+export type PersonId = 'a' | 'b';
+/** Besitzer eines Postens: eine Person oder beide gemeinsam. */
+export type Besitzer = PersonId | 'gemeinsam';
+
+const SCHEMA = `
+CREATE TABLE IF NOT EXISTS personen (
+	id TEXT PRIMARY KEY CHECK (id IN ('a', 'b')),
+	name TEXT NOT NULL,
+	netto_cent INTEGER NOT NULL DEFAULT 0,
+	etf_prozent REAL NOT NULL DEFAULT 0,
+	ueberweisungstag INTEGER NOT NULL DEFAULT 1,
+	modus INTEGER NOT NULL DEFAULT 1,
+	puffer_cent INTEGER NOT NULL DEFAULT 2500,
+	ist_cent INTEGER,
+	ist_datum TEXT,
+	ist_ausstehend INTEGER NOT NULL DEFAULT 0,
+	theme TEXT NOT NULL DEFAULT 'salbei',
+	hell TEXT NOT NULL DEFAULT 'auto'
+);
+CREATE TABLE IF NOT EXISTS posten (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	besitzer TEXT NOT NULL CHECK (besitzer IN ('a', 'b', 'gemeinsam')),
+	name TEXT NOT NULL,
+	intervall INTEGER NOT NULL,
+	betrag_cent INTEGER NOT NULL,
+	art TEXT,
+	abbuchungsart TEXT,
+	buchungsdatum TEXT
+);
+CREATE TABLE IF NOT EXISTS beteiligungen (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	posten_id INTEGER NOT NULL REFERENCES posten(id) ON DELETE CASCADE,
+	name TEXT NOT NULL,
+	betrag_cent INTEGER NOT NULL,
+	eingangstag INTEGER
+);
+CREATE TABLE IF NOT EXISTS rueckstellungen (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	person TEXT NOT NULL CHECK (person IN ('a', 'b')),
+	name TEXT NOT NULL,
+	betrag_cent INTEGER NOT NULL,
+	zielkonto TEXT
+);
+CREATE TABLE IF NOT EXISTS gemeinschaft (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	miete_cent INTEGER NOT NULL DEFAULT 0,
+	alltag_cent INTEGER NOT NULL DEFAULT 0,
+	ruecklage_cent INTEGER NOT NULL DEFAULT 0,
+	modell TEXT NOT NULL DEFAULT 'A'
+);
+CREATE TABLE IF NOT EXISTS aenderungen (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	zeit TEXT NOT NULL,
+	person TEXT NOT NULL,
+	bereich TEXT NOT NULL,
+	text TEXT NOT NULL,
+	rueckgaengig TEXT
+);
+INSERT OR IGNORE INTO personen (id, name, ueberweisungstag) VALUES ('a', 'Person 1', 7), ('b', 'Person 2', 7);
+INSERT OR IGNORE INTO gemeinschaft (id) VALUES (1);
+`;
+
+export function oeffneDatenbank(pfad: string): DatabaseSync {
+	const db = new DatabaseSync(pfad);
+	db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
+	db.exec(SCHEMA);
+	return db;
+}
+
+let instanz: DatabaseSync | undefined;
+
+export function db(): DatabaseSync {
+	if (!instanz) {
+		const ordner = process.env.DATA_DIR ?? 'data';
+		mkdirSync(ordner, { recursive: true });
+		instanz = oeffneDatenbank(join(ordner, 'fixkosten.db'));
+	}
+	return instanz;
+}
+
+/** Für Tests: eine frische Datenbank im Speicher verwenden. */
+export function setzeDatenbank(neu: DatabaseSync) {
+	instanz = neu;
+}
