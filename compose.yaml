@@ -4,6 +4,9 @@ services:
     image: ghcr.io/quqide/fixkosten-app:latest
     container_name: fixkosten
     restart: unless-stopped
+    # Der Container läuft als Benutzer 1000. Gehört der Datenordner dem TrueNAS-Benutzer
+    # „apps“ (Dataset mit Preset „Apps“), stattdessen diese Zeile aktivieren:
+    # user: "568:568"
     ports:
       - "3080:3000"
     environment:
