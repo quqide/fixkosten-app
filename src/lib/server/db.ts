@@ -116,7 +116,16 @@ const NEUE_SPALTEN: [tabelle: string, spalte: string, definition: string][] = [
 	['personen', 'actual_konto_name', 'TEXT'],
 	['personen', 'actual_gehalt_kategorie', 'TEXT'],
 	['posten', 'actual_terminplan', 'TEXT'],
-	['gemeinschaft', 'rundung', 'TEXT']
+	['gemeinschaft', 'rundung', 'TEXT'],
+	['rueckstellungen', 'art', "TEXT NOT NULL DEFAULT 'fest'"],
+	['rueckstellungen', 'ziel_cent', 'INTEGER'],
+	['rueckstellungen', 'ziel_netto_faktor', 'REAL'],
+	['rueckstellungen', 'faellig', 'TEXT'],
+	['rueckstellungen', 'wkn', 'TEXT'],
+	['rueckstellungen', 'aktiv', 'INTEGER NOT NULL DEFAULT 1'],
+	['rueckstellungen', 'actual_kategorie', 'TEXT'],
+	['rueckstellungen', 'stand_cent', 'INTEGER'],
+	['rueckstellungen', 'stand_datum', 'TEXT']
 ];
 
 function ergaenzeSpalten(db: DatabaseSync) {

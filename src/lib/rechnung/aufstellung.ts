@@ -79,7 +79,6 @@ export function standardAuftraege(
 	liste.push({ name: 'ETF-Sparplan', zielkonto: 'Depot', bausteine: [{ typ: 'prozent', prozent: etfProzent }], rundung: ETF_RUNDUNG });
 	const ziele = new Map<string, Rueckstellung[]>();
 	for (const r of rueckstellungen) {
-		if (r.betragCent === 0) continue;
 		ziele.set(ziel(r), [...(ziele.get(ziel(r)) ?? []), r]);
 	}
 	for (const [z, liste_] of ziele) {

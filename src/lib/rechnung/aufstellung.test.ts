@@ -21,9 +21,10 @@ describe('Monatsaufstellung', () => {
 		expect(a.dauerauftraege[0]).toEqual({ name: 'ETF-Sparplan', zielkonto: 'Depot', betragCent: 69000 });
 		// 3.450 − 690 − 200 − 730 − 611,30 = 1.218,70 → 1.218 €
 		expect(a.spassCent).toBe(121800);
+		// Pausierte Rückstellungen (Rate 0) zählen beim Ziel mit, damit der Auftrag bleibt, wenn sie wieder laufen.
 		expect(a.dauerauftraege.map((d) => d.name)).toEqual([
 			'ETF-Sparplan',
-			'Schlussrate Mazda 6e',
+			'Rücklagen Tagesgeld',
 			'Gemeinschaftskonto',
 			'Spaßkonto'
 		]);

@@ -1,7 +1,9 @@
 import { fail } from '@sveltejs/kit';
-import { leseBetrag, leseGanzzahl } from '#lib/eingabe.ts';
+import { leseBetrag, leseGanzzahl, leseProzent } from '#lib/eingabe.ts';
 import { STANDARD_REST_RUNDUNG, type AuftragKonfig, type Baustein } from '#lib/rechnung/aufstellung.ts';
 import { SCHRITTE } from '#lib/rechnung/rundung.ts';
+import { heute } from '#lib/rechnung/datum.ts';
+import { rueckstellungenMitStand } from '#lib/server/ansicht.ts';
 import { angemeldet } from '#lib/server/aktionen.ts';
 import { ActualFehler, actualEingerichtet, ladeKonten, type ActualKonto } from '#lib/server/actual.ts';
 import {
@@ -54,7 +56,18 @@ export const load: PageServerLoad = ({ locals }) => {
 		warnungen: actual ? warnungenFuer(id) : [],
 		person: ladePerson(id),
 		auftraege: ladeAuftraege(id),
-		rueckstellungen: ladeRueckstellungen(id),
+		rueckstellungen: (() => {
+			const p = ladePerson(id);
+			const stand = actual ? ladeActualStand<Schnappschuss>(id) : null;
+			return rueckstellungenMitStand(ladeRueckstellungen(id), {
+				nettoCent: p.nettoCent,
+				stichtag: heute(),
+				ueberweisungstag: p.ueberweisungstag,
+				salden: stand?.daten.kategorieSalden ?? null
+			});
+		})(),
+		// Ausgabe-Kategorien aus dem letzten Abruf, für den Stand der Rückstellungen.
+		ausgabeKategorien: actual ? (ladeActualStand<Schnappschuss>(id)?.daten.kategorien.filter((k) => !k.einnahme) ?? []) : [],
 		verlauf: letzteAenderungen(15),
 		namen: Object.fromEntries(ladePersonen().map((p) => [p.id, p.name]))
 	};
@@ -122,23 +135,16 @@ export const actions: Actions = {
 
 	rueckstellungen: async ({ request, locals }) => {
 		const wer = angemeldet(locals);
-		const f = await request.formData();
-		const namen = f.getAll('r_name').map(String);
-		const betraege = f.getAll('r_betrag').map(String);
-		const ziele = f.getAll('r_ziel').map(String);
-		const fehler: Record<string, string> = {};
-		const liste: RueckstellungEintrag[] = [];
-		namen.forEach((n, i) => {
-			const name = n.trim();
-			const betragCent = leseBetrag(betraege[i]);
-			if (!name && betragCent == null) return;
-			if (!name) fehler[`r_${i}`] = 'Wofür legst du das Geld zurück?';
-			else if (betragCent == null || betragCent < 0) fehler[`r_${i}`] = `Bitte den Monatsbetrag für „${name}“ eintragen.`;
-			else liste.push({ person: wer, name, betragCent, zielkonto: ziele[i]?.trim() || null });
-		});
-		if (Object.keys(fehler).length) return fail(400, { bereich: 'rueckstellungen', fehler });
-		const undoId = speichereRueckstellungen(wer, liste, wer);
-		return { meldung: 'Rücklagen gespeichert.', undoId };
+		let roh: unknown;
+		try {
+			roh = JSON.parse(String((await request.formData()).get('rueckstellungen') ?? '[]'));
+		} catch {
+			return fail(400, { bereich: 'rueckstellungen', fehler: { allgemein: 'Die Eingaben ließen sich nicht lesen.' } });
+		}
+		const ergebnis = leseRueckstellungen(roh, wer);
+		if ('fehler' in ergebnis) return fail(400, { bereich: 'rueckstellungen', fehler: ergebnis.fehler });
+		const undoId = speichereRueckstellungen(wer, ergebnis.liste, wer);
+		return { meldung: 'Rückstellungen gespeichert.', undoId };
 	},
 
 	darstellung: async ({ request, locals }) => {
@@ -297,4 +303,58 @@ function leseAuftraege(roh: unknown): { auftraege: AuftragKonfig[] } | { fehler:
 		fehler.allgemein = 'Nur ein Dauerauftrag kann bekommen, was übrig bleibt.';
 	}
 	return Object.keys(fehler).length ? { fehler } : { auftraege };
+}
+
+/** Prüft die Rückstellungen aus dem Formular. */
+function leseRueckstellungen(roh: unknown, person: PersonId): { liste: RueckstellungEintrag[] } | { fehler: Record<string, string> } {
+	const fehler: Record<string, string> = {};
+	const liste: RueckstellungEintrag[] = [];
+	if (!Array.isArray(roh)) return { fehler: { allgemein: 'Die Eingaben ließen sich nicht lesen.' } };
+	const bisherige = new Map(ladeRueckstellungen(person).map((r) => [r.id, r]));
+	roh.forEach((r: Roh, i) => {
+		const name = String(r.name ?? '').trim();
+		const art = (['fest', 'faellig', 'ziel'].includes(String(r.art)) ? r.art : 'fest') as RueckstellungEintrag['art'];
+		const betragText = String(r.betrag ?? '').trim();
+		if (!name && !betragText && !String(r.ziel ?? '').trim()) return;
+		const f = (text: string) => void (fehler[`r_${i}`] = text);
+		if (!name) return f('Wofür legst du das Geld zurück?');
+		const betragCent = art === 'faellig' ? 0 : leseBetrag(betragText);
+		if (betragCent == null || betragCent < 0) return f(`„${name}“: Bitte den Betrag pro Monat eintragen.`);
+
+		let zielCent: number | null = null;
+		let zielNettoFaktor: number | null = null;
+		const zielText = String(r.ziel ?? '').trim();
+		if (art === 'ziel' && r.zielArt === 'netto') {
+			zielNettoFaktor = leseProzent(zielText);
+			if (!zielNettoFaktor || zielNettoFaktor <= 0) return f(`„${name}“: Wie viele Nettogehälter sollen es sein, zum Beispiel 3?`);
+		} else if (art !== 'fest') {
+			zielCent = leseBetrag(zielText);
+			if (!zielCent || zielCent <= 0) return f(`„${name}“: Bitte den Zielbetrag eintragen.`);
+		}
+		const faellig = art === 'faellig' ? String(r.faellig ?? '') : null;
+		if (art === 'faellig' && !/^\d{4}-\d{2}-\d{2}$/.test(faellig ?? '')) return f(`„${name}“: Wann wird das Geld gebraucht?`);
+
+		const wohin = String(r.wohin ?? '').trim();
+		const istWkn = r.wohinArt === 'wkn';
+		const actualKategorie = String(r.kategorie ?? '') || null;
+		const standCent = actualKategorie ? null : leseBetrag(String(r.stand ?? ''));
+		const vorher = typeof r.id === 'number' ? bisherige.get(r.id) : undefined;
+		liste.push({
+			person,
+			name,
+			art,
+			betragCent,
+			zielCent,
+			zielNettoFaktor,
+			faellig,
+			zielkonto: istWkn ? null : wohin || null,
+			wkn: istWkn ? wohin.toUpperCase() || null : null,
+			aktiv: r.aktiv !== false,
+			actualKategorie,
+			standCent,
+			// Datum nur neu setzen, wenn sich der Stand geändert hat.
+			standDatum: standCent == null ? null : vorher?.standCent === standCent ? vorher.standDatum : heute()
+		});
+	});
+	return Object.keys(fehler).length ? { fehler } : { liste };
 }

@@ -94,6 +94,8 @@ export interface ActualDaten {
 	kategorien: ActualKategorie[];
 	/** Letzte Gutschrift je Kategorie im gewählten Konto, für die Prüfung der Gehaltskategorie. */
 	letzteEinnahmen: Record<string, string>;
+	/** Saldo je Kategorie im laufenden Monat, für den Stand der Rückstellungen. */
+	kategorieSalden: Record<string, number>;
 }
 
 type RohTerminplan = Awaited<ReturnType<Api['getSchedules']>>[number];
@@ -139,6 +141,18 @@ export function ladeAbgleich(
 				.filter((k) => !k.hidden)
 				.map((k) => ({ id: k.id, name: k.name, gruppe: g.name, einnahme: Boolean(g.is_income) }))
 		);
+
+		const kategorieSalden: Record<string, number> = {};
+		try {
+			const monat = await api.getBudgetMonth(stichtag.slice(0, 7));
+			for (const g of monat.categoryGroups) {
+				for (const k of g.categories ?? []) {
+					if (typeof k.id === 'string' && typeof k.balance === 'number') kategorieSalden[k.id] = k.balance;
+				}
+			}
+		} catch {
+			// Monat noch nicht im Budget angelegt: dann eben ohne Salden.
+		}
 
 		const saldoCent = await api.getAccountBalance(kontoId, new Date(`${stichtag}T12:00:00`));
 		const rohTerminplaene = await api.getSchedules();
@@ -229,6 +243,6 @@ export function ladeAbgleich(
 			if (t.amount > 0 && t.category && (letzteEinnahmen[t.category] ?? '') < t.date) letzteEinnahmen[t.category] = t.date;
 		}
 
-		return { saldoCent, buchungen, terminplaene, kategorien, letzteEinnahmen };
+		return { saldoCent, buchungen, terminplaene, kategorien, letzteEinnahmen, kategorieSalden };
 	});
 }

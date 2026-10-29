@@ -6,6 +6,7 @@ import {
 	vergleicheSollIst,
 	type Zeile
 } from '#lib/rechnung/index.ts';
+import { berechneRueckstellung, zielVon } from '#lib/rechnung/rueckstellung.ts';
 import { actualEingerichtet } from './actual.ts';
 import type { PersonId } from './db.ts';
 import {
@@ -14,8 +15,10 @@ import {
 	ladePerson,
 	ladePersonen,
 	ladePosten,
+	ladeActualStand,
 	ladeRueckstellungen,
-	type PostenEintrag
+	type PostenEintrag,
+	type RueckstellungEintrag
 } from './repo.ts';
 
 export const anderePerson = (id: PersonId): PersonId => (id === 'a' ? 'b' : 'a');
@@ -43,10 +46,31 @@ export function postenMitZeilen(posten: PostenEintrag[], stichtag: string, ueber
 	});
 }
 
+/** Stand und Monatsrate je Rückstellung; der Stand kommt aus Actual, sonst von Hand. */
+export function rueckstellungenMitStand(
+	liste: RueckstellungEintrag[],
+	e: { nettoCent: number; stichtag: string; ueberweisungstag: number; salden: Record<string, number> | null }
+) {
+	return liste.map((r) => {
+		const ausActual = r.actualKategorie && e.salden ? (e.salden[r.actualKategorie] ?? null) : null;
+		const standCent = ausActual ?? r.standCent;
+		return {
+			eintrag: r,
+			standQuelle: ausActual != null ? ('actual' as const) : r.standCent != null ? ('hand' as const) : null,
+			...berechneRueckstellung(r, { standCent, nettoCent: e.nettoCent, stichtag: e.stichtag, ueberweisungstag: e.ueberweisungstag })
+		};
+	});
+}
+
 export function personAnsicht(id: PersonId, stichtag: string) {
 	const person = ladePerson(id);
 	const posten = ladePosten(id);
-	const rueckstellungen = ladeRueckstellungen(id);
+	const rueckstellungen = rueckstellungenMitStand(ladeRueckstellungen(id), {
+		nettoCent: person.nettoCent,
+		stichtag,
+		ueberweisungstag: person.ueberweisungstag,
+		salden: ladeActualStand<{ kategorieSalden?: Record<string, number> }>(id)?.daten.kategorieSalden ?? null
+	});
 	const gemeinschaft = gemeinschaftAnsicht(stichtag);
 	const einstellungen = { stichtag, ueberweisungstag: person.ueberweisungstag };
 	const fixkosten = berechneFixkosten(posten, einstellungen);
@@ -55,7 +79,7 @@ export function personAnsicht(id: PersonId, stichtag: string) {
 		modus: person.modus,
 		nettoCent: person.nettoCent,
 		auftraege,
-		rueckstellungen,
+		rueckstellungen: rueckstellungen.map((r) => ({ name: r.eintrag.name, betragCent: r.rateCent, zielkonto: zielVon(r.eintrag) })),
 		gemeinschaftCent: gemeinschaft.anteil[id].betragCent,
 		fixkostenMonatlichCent: fixkosten.summeMonatlichCent
 	});
