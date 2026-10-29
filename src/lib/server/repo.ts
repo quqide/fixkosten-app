@@ -209,6 +209,7 @@ function zuPosten(z: Zeile): PostenEintrag {
 		abbuchungsart: (z.abbuchungsart as Abbuchungsart | null) ?? null,
 		buchungsdatum: (z.buchungsdatum as string | null) ?? null,
 		actualTerminplan: (z.actual_terminplan as string | null) ?? null,
+		icon: (z.icon as string | null) ?? null,
 		beteiligungen: ladeBeteiligungen(Number(z.id))
 	};
 }
@@ -235,7 +236,8 @@ function schreibePosten(p: PostenEintrag, id?: number): number {
 		p.art ?? null,
 		p.abbuchungsart ?? null,
 		p.buchungsdatum ?? null,
-		p.actualTerminplan ?? null
+		p.actualTerminplan ?? null,
+		p.icon ?? null
 	] as const;
 	let postenId: number;
 	if (id != null) {
@@ -244,14 +246,14 @@ function schreibePosten(p: PostenEintrag, id?: number): number {
 			db()
 				.prepare(
 					`UPDATE posten SET besitzer = ?, name = ?, intervall = ?, betrag_cent = ?, art = ?, abbuchungsart = ?,
-					buchungsdatum = ?, actual_terminplan = ? WHERE id = ?`
+					buchungsdatum = ?, actual_terminplan = ?, icon = ? WHERE id = ?`
 				)
 				.run(...werte, id);
 		} else {
 			db()
 				.prepare(
 					`INSERT INTO posten (besitzer, name, intervall, betrag_cent, art, abbuchungsart, buchungsdatum,
-					actual_terminplan, id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+					actual_terminplan, icon, id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 				)
 				.run(...werte, id);
 		}
@@ -260,7 +262,7 @@ function schreibePosten(p: PostenEintrag, id?: number): number {
 		const r = db()
 			.prepare(
 				`INSERT INTO posten (besitzer, name, intervall, betrag_cent, art, abbuchungsart, buchungsdatum,
-				actual_terminplan) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+				actual_terminplan, icon) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 			)
 			.run(...werte);
 		postenId = Number(r.lastInsertRowid);

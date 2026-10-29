@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { FixkostenPosten, Zeile } from '#lib/rechnung/fixkosten.ts';
-	import { datumKnapp, eur, initiale, intervallText } from '#lib/format.ts';
+	import { datumKnapp, eur, intervallText } from '#lib/format.ts';
+	import PostenSymbol from './PostenSymbol.svelte';
 	import Icon from './Icon.svelte';
 
 	interface Eintrag<P> {
@@ -27,7 +28,7 @@
 	{#each eintraege as e (e.posten.id)}
 		<li>
 			<button type="button" class="row" onclick={() => bearbeiten(e.posten)}>
-				<span class="icon {artKlasse(e.posten.art)}">{initiale(e.posten.name)}</span>
+				<PostenSymbol name={e.posten.name} icon={e.posten.icon} klasse={artKlasse(e.posten.art)} />
 				<span class="main">
 					<span class="title">{e.posten.name}</span>
 					<span class="detail">
