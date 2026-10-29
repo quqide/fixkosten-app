@@ -8,8 +8,9 @@ Läuft als einzelner Docker-Container, gedacht für Dockge auf TrueNAS. Actual B
 
 - [x] Grundgerüst: SvelteKit, Docker-Image, Stack für Dockge
 - [x] Rechenkern mit Akzeptanztests (`src/lib/rechnung`)
-- [ ] Oberfläche mit Personenauswahl, Speicherung in SQLite
-- [ ] Anbindung an Actual Budget
+- [x] Oberfläche mit Personenauswahl, Speicherung in SQLite, Farbthemen, Rückgängig, Sicherung
+- [x] Kontostand aus Actual Budget, mit Erkennung von Gehalt und Daueraufträgen
+- [ ] Buchungen den Fixkosten zuordnen, Preisänderungen melden
 
 ## Rechenkern
 
@@ -24,6 +25,19 @@ Alle Beträge sind ganze Cent, alle Daten `JJJJ-MM-TT`.
 
 Die Tests in `*.test.ts` enthalten alle Akzeptanzwerte der alten Tabelle (Stichtage 28.09.2026, 01.10.2026, 07.10.2026, 08.10.2026, 15.01.2027) und den korrigierten Monatsende-Fall.
 
+## Oberfläche
+
+| Seite | Inhalt |
+| --- | --- |
+| Übersicht | Reicht das Geld? Soll und Ist mit Ring, Daueraufträge am Überweisungstag, nächste Abbuchungen, Rücklage der nächsten 12 Monate. Mit `?stichtag=JJJJ-MM-TT` lässt sich jeder Tag ansehen. |
+| Fixkosten | Eigene Posten anlegen, ändern und löschen, Anteile anderer direkt am Posten |
+| Gemeinsam | Miete, Alltag, Rücklage und gemeinsame Fixkosten; Aufteilung nach Gehalt oder gleichem Rest |
+| Einstellungen | Kontenmodell, Gehalt, Rücklagen, Farbthema, Sicherung herunterladen und einspielen, letzte Änderungen mit Rückgängig |
+
+Beim ersten Öffnen wählt jede Person aus, wer sie ist (Cookie, kein Passwort). Beide sehen und ändern alle Daten. Jede Änderung landet im Verlauf und lässt sich rückgängig machen.
+
+Die Daten liegen in `DATA_DIR/fixkosten.db` (SQLite, eingebaut in Node 22).
+
 ## Entwicklung
 
 ```sh
@@ -31,6 +45,7 @@ npm install
 npm test        # Rechenkern testen
 npm run dev     # Entwicklungsserver
 npm run build   # Produktions-Build nach build/
+npm start       # gebaute App starten (Daten in ./data)
 ```
 
 ## Betrieb mit Dockge
@@ -39,7 +54,19 @@ Bei jedem Push auf `main` baut GitHub Actions das Image `ghcr.io/quqide/fixkoste
 
 1. In Dockge einen neuen Stack `fixkosten` anlegen und den Inhalt von [`compose.yaml`](compose.yaml) einfügen.
 2. `POOL` im Datenpfad durch deinen Pool ersetzen und den Ordner vorher anlegen. Der Container läuft als Benutzer mit der ID 1000, der Ordner muss für ihn beschreibbar sein.
-3. `ORIGIN` auf die Adresse setzen, unter der du die App aufrufst.
-4. Stack starten. Updates holst du mit „Update“ in Dockge.
+3. Stack starten und `http://<NAS>:3080` öffnen. Updates holst du mit „Update“ in Dockge.
 
 Das Repository ist privat, deshalb ist auch das Image zunächst privat. Damit Dockge es ohne Anmeldung laden kann, das Paket unter GitHub → Packages → `fixkosten-app` → Package settings auf „Public“ stellen. Das Image enthält keine persönlichen Daten, die liegen nur im Datenordner.
+
+### Actual Budget anbinden (freiwillig)
+
+Pro Person, die Actual nutzt, im Stack diese Umgebungsvariablen setzen (für die zweite Person `ACTUAL_B_…`):
+
+| Variable | Inhalt |
+| --- | --- |
+| `ACTUAL_A_URL` | Adresse des Actual-Servers, z. B. `http://192.168.1.10:5006` |
+| `ACTUAL_A_PASSWORD` | Passwort des Actual-Servers |
+| `ACTUAL_A_SYNC_ID` | Sync-ID des Budgets (Actual → Einstellungen → Erweitert) |
+| `ACTUAL_A_E2E_PASSWORD` | nur bei Ende-zu-Ende-Verschlüsselung |
+
+Danach unter Einstellungen das Konto wählen (Modus 1: Gehaltskonto, Modus 2: Fixkosten-Konto). Die App liest nur. Sie holt den Kontostand einmal am Tag beim Öffnen der Übersicht und auf Knopfdruck. Im Monat erkennt sie das Gehalt an einer Gutschrift ab 70 % des Nettos und die Daueraufträge am Betrag (±1 €); noch nicht gebuchte Daueraufträge zieht sie vom Kontostand ab. Eine lokale Kopie des Budgets liegt unter `/data/actual`.
