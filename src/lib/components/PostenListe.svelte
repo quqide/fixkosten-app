@@ -13,8 +13,8 @@
 		eintraege,
 		bearbeiten
 	}: {
-		eintraege: Eintrag<FixkostenPosten & { id?: number }>[];
-		bearbeiten: (p: FixkostenPosten & { id?: number }) => void;
+		eintraege: Eintrag<FixkostenPosten & { id?: number; actualTerminplan?: string | null }>[];
+		bearbeiten: (p: FixkostenPosten & { id?: number; actualTerminplan?: string | null }) => void;
 	} = $props();
 
 	const summe = $derived(
@@ -31,7 +31,7 @@
 				<span class="main">
 					<span class="title">{e.posten.name}</span>
 					<span class="detail">
-						{eur(e.posten.betragCent)} {intervallText(e.posten.intervallMonate)}{#if e.zeile.naechsteBuchung}{' · '}{datumKnapp(e.zeile.naechsteBuchung)}{/if}
+						{eur(e.posten.betragCent)} {intervallText(e.posten.intervallMonate)}{#if e.zeile.naechsteBuchung}{' · '}{datumKnapp(e.zeile.naechsteBuchung)}{/if}{#if e.posten.actualTerminplan}{' · '}<span class="quelle">Actual</span>{/if}
 					</span>
 				</span>
 				<span class="value">{eur(e.zeile.monatlichCent)}<small>pro Monat</small></span>
@@ -50,3 +50,7 @@
 		<div class="row total"><span class="main">Pro Monat zurücklegen</span><span class="value">{eur(summe)}</span></div>
 	</li>
 </ul>
+
+<style>
+	.quelle { font-size: 12px; font-weight: 700; color: var(--calm); }
+</style>

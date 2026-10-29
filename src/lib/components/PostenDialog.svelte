@@ -2,13 +2,13 @@
 	import { enhance } from '$app/forms';
 	import { ABBUCHUNGSARTEN, ARTEN } from '#lib/rechnung/fixkosten.ts';
 	import type { FixkostenPosten } from '#lib/rechnung/fixkosten.ts';
-	import { betragFeld } from '#lib/format.ts';
+	import { betragFeld, intervallText } from '#lib/format.ts';
 	import { zeigeToast } from '#lib/toast.svelte.ts';
 	import type { SubmitFunction } from '$app/forms';
 	import { heute } from '#lib/rechnung/datum.ts';
 	import Icon from './Icon.svelte';
 
-	type Posten = FixkostenPosten & { id?: number };
+	type Posten = FixkostenPosten & { id?: number; actualTerminplan?: string | null };
 
 	let { posten = $bindable(), neuTitel = 'Neue Fixkosten' }: { posten: Posten | null | undefined; neuTitel?: string } = $props();
 
@@ -17,6 +17,8 @@
 	let beteiligungen = $state<{ name: string; betrag: string; tag: string }[]>([]);
 
 	const neu = $derived(posten != null && posten.id == null);
+	/** Name, Betrag, Rhythmus und Termin pflegt Actual. */
+	const ausActual = $derived(!!posten?.actualTerminplan);
 
 	$effect(() => {
 		if (posten) {
@@ -61,22 +63,27 @@
 			</div>
 			<div class="sheet-body">
 				{#if posten.id != null}<input type="hidden" name="id" value={posten.id} />{/if}
+				{#if ausActual}<p class="note aus-actual">Name, Betrag, Rhythmus und Termin kommen aus dem Terminplan in Actual. Ändere sie dort, die App übernimmt sie beim nächsten Abruf.</p>{/if}
 				{#if fehler.allgemein}<p class="note" role="alert" style="color:var(--warm)">{fehler.allgemein}</p>{/if}
 				<div class="card">
 					<div class="field">
 						<label for="p-name">Wofür?</label>
-						<input id="p-name" name="name" value={posten.name} placeholder="z. B. Netflix" autocomplete="off"
+						<input id="p-name" name="name" value={posten.name} readonly={ausActual} placeholder="z. B. Netflix" autocomplete="off"
 							aria-invalid={!!fehler.name} aria-describedby={fehler.name ? 'p-name-f' : undefined} />
 						{#if fehler.name}<span class="error" id="p-name-f">{fehler.name}</span>{/if}
 					</div>
 					<div class="field">
 						<label for="p-betrag">Wie viel pro Abbuchung?</label>
-						<input id="p-betrag" name="betrag" value={betragFeld(posten.betragCent || null)} inputmode="decimal" placeholder="0,00"
+						<input id="p-betrag" name="betrag" value={betragFeld(posten.betragCent || null)} readonly={ausActual} inputmode="decimal" placeholder="0,00"
 							aria-invalid={!!fehler.betrag} aria-describedby={fehler.betrag ? 'p-betrag-f' : 'p-betrag-h'} />
 						{#if fehler.betrag}<span class="error" id="p-betrag-f">{fehler.betrag}</span>{:else}<span class="help" id="p-betrag-h">In Euro, zum Beispiel 12,99</span>{/if}
 					</div>
 					<div class="field">
 						<label for="p-intervall">Wie oft?</label>
+						{#if ausActual}
+							<input id="p-intervall" value={intervallText(posten.intervallMonate)} readonly />
+							<input type="hidden" name="intervall" value={posten.intervallMonate} />
+						{:else}
 						<select id="p-intervall" name="intervall" value={String(posten.intervallMonate || 1)}>
 							<option value="1">Jeden Monat</option>
 							<option value="2">Alle zwei Monate</option>
@@ -84,10 +91,11 @@
 							<option value="6">Alle sechs Monate</option>
 							<option value="12">Einmal im Jahr</option>
 						</select>
+						{/if}
 					</div>
 					<div class="field">
 						<label for="p-datum">Wann wird abgebucht?</label>
-						<input id="p-datum" name="buchungsdatum" type="date" value={posten.buchungsdatum ?? heute()}
+						<input id="p-datum" name="buchungsdatum" type="date" value={posten.buchungsdatum ?? heute()} readonly={ausActual}
 							aria-invalid={!!fehler.buchungsdatum} aria-describedby="p-datum-h" />
 						{#if fehler.buchungsdatum}<span class="error">{fehler.buchungsdatum}</span>{/if}
 						<span class="help" id="p-datum-h">Ein Datum genügt, egal ob vergangen oder künftig. Die übrigen Termine rechnet die App selbst aus.</span>
@@ -148,6 +156,8 @@
 </dialog>
 
 <style>
+	.aus-actual { margin: 0 4px 12px; }
+	input[readonly] { color: var(--secondary) !important; }
 	.bet { border: 0; margin: 0; padding: 12px 0; display: grid; gap: 8px; border-bottom: 1px solid var(--separator); }
 	.bet input { font-size: 16px; }
 	.textlink { justify-self: start; color: var(--warm); }

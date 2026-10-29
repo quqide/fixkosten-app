@@ -69,4 +69,11 @@ Pro Person, die Actual nutzt, im Stack diese Umgebungsvariablen setzen (für die
 | `ACTUAL_A_SYNC_ID` | Sync-ID des Budgets (Actual → Einstellungen → Erweitert) |
 | `ACTUAL_A_E2E_PASSWORD` | nur bei Ende-zu-Ende-Verschlüsselung |
 
-Danach unter Einstellungen das Konto wählen (Modus 1: Gehaltskonto, Modus 2: Fixkosten-Konto). Die App liest nur. Sie holt den Kontostand einmal am Tag beim Öffnen der Übersicht und auf Knopfdruck. Im Monat erkennt sie das Gehalt an einer Gutschrift ab 70 % des Nettos und die Daueraufträge am Betrag (±1 €); noch nicht gebuchte Daueraufträge zieht sie vom Kontostand ab. Eine lokale Kopie des Budgets liegt unter `/data/actual`.
+Danach unter Einstellungen das Konto wählen (Modus 1: Gehaltskonto, Modus 2: Fixkosten-Konto) und „Jetzt abrufen“. Die App liest nur und ändert nichts in Actual.
+
+- **Terminpläne zuordnen:** Jeder Terminplan ist Fixkosten, ein Dauerauftrag oder wird nicht berücksichtigt. Fixkosten übernimmt die App mit Name, Betrag, Rhythmus und nächstem Termin; diese Felder sind in der App dann gesperrt. Gleichnamige, von Hand angelegte Posten werden zur Verknüpfung vorgeschlagen.
+- **Gehalt:** an einer Einnahmen-Kategorie erkannt, sonst an einer Gutschrift ab 70 % des Nettos.
+- **Daueraufträge:** am zugeordneten Terminplan erkannt, sonst am Betrag (±1 €). Noch nicht gebuchte Daueraufträge werden vom Kontostand abgezogen.
+- **Prüfung:** fehlende Kategorie, falsches Konto, ungefährer Betrag, nicht abbildbarer Rhythmus, Preisabweichung der letzten Buchung, überfällige Termine, doppelte oder verschwundene Terminpläne und Daueraufträge mit anderem Betrag als berechnet werden als Warnung oder Hinweis angezeigt.
+
+Abgerufen wird einmal am Tag beim Öffnen der Übersicht und auf Knopfdruck. Eine lokale Kopie des Budgets liegt unter `/data/actual`.
