@@ -9,6 +9,7 @@ import {
 import { actualEingerichtet } from './actual.ts';
 import type { PersonId } from './db.ts';
 import {
+	ladeAuftraege,
 	ladeGemeinschaft,
 	ladePerson,
 	ladePersonen,
@@ -24,7 +25,7 @@ export function gemeinschaftAnsicht(stichtag: string) {
 	const posten = ladePosten('gemeinsam');
 	const [a, b] = ladePersonen();
 	const rechnung = berechneGemeinschaft(
-		{ ...konto, fixkosten: posten },
+		{ positionen: konto.positionen, fixkosten: posten, modell: konto.modell, rundung: konto.rundung ?? undefined },
 		[
 			{ name: a.name, nettoCent: a.nettoCent },
 			{ name: b.name, nettoCent: b.nettoCent }
@@ -49,10 +50,11 @@ export function personAnsicht(id: PersonId, stichtag: string) {
 	const gemeinschaft = gemeinschaftAnsicht(stichtag);
 	const einstellungen = { stichtag, ueberweisungstag: person.ueberweisungstag };
 	const fixkosten = berechneFixkosten(posten, einstellungen);
+	const auftraege = ladeAuftraege(id);
 	const aufstellung = berechneAufstellung({
 		modus: person.modus,
 		nettoCent: person.nettoCent,
-		etfQuoteProzent: person.etfProzent,
+		auftraege,
 		rueckstellungen,
 		gemeinschaftCent: gemeinschaft.anteil[id].betragCent,
 		fixkostenMonatlichCent: fixkosten.summeMonatlichCent
@@ -89,6 +91,7 @@ export function personAnsicht(id: PersonId, stichtag: string) {
 		vergleich,
 		ausstehendCent,
 		naechste,
+		auftraege,
 		actual: actualEingerichtet(id),
 		verlauf: posten.length ? sollVerlauf(posten, stichtag, person.ueberweisungstag) : []
 	};

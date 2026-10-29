@@ -1,6 +1,7 @@
 import type { Abbuchungsart, Art, Beteiligung, FixkostenPosten } from '#lib/rechnung/fixkosten.ts';
 import type { Aufteilungsmodell } from '#lib/rechnung/gemeinschaft.ts';
-import type { Kontenmodus } from '#lib/rechnung/aufstellung.ts';
+import { standardAuftraege, type AuftragKonfig, type Baustein, type Kontenmodus } from '#lib/rechnung/aufstellung.ts';
+import type { Rundung } from '#lib/rechnung/rundung.ts';
 import type { Abgleich } from '#lib/rechnung/abgleich.ts';
 import { db, type Besitzer, type PersonId } from './db.ts';
 
@@ -50,11 +51,31 @@ export interface RueckstellungEintrag {
 	zielkonto: string | null;
 }
 
+/** Was mit dem Geld einer Position vom Gemeinschaftskonto passiert. */
+export interface Ausgang {
+	art: 'ueberweisung' | 'umbuchung';
+	ziel: string;
+	tag: number | null;
+}
+
+export interface PositionEintrag {
+	id?: number;
+	name: string;
+	art: 'fest' | 'fixkosten';
+	betragCent: number;
+	ausgang: Ausgang | null;
+	/** Kategorie in Actual je Person, für die Prüfung der Aufteilung im Terminplan. */
+	kategorie: { a: string | null; b: string | null };
+}
+
 export interface GemeinschaftEintrag {
-	mieteCent: number;
-	alltagCent: number;
-	ruecklageCent: number;
+	positionen: PositionEintrag[];
 	modell: Aufteilungsmodell;
+	rundung: Rundung | null;
+}
+
+export interface AuftragEintrag extends AuftragKonfig {
+	id?: number;
 }
 
 export interface Aenderung {
@@ -70,7 +91,8 @@ type Rueckgaengig =
 	| { typ: 'posten'; id: number; vorher: PostenEintrag | null }
 	| { typ: 'person'; vorher: Person }
 	| { typ: 'gemeinschaft'; vorher: GemeinschaftEintrag }
-	| { typ: 'rueckstellungen'; person: PersonId; vorher: RueckstellungEintrag[] };
+	| { typ: 'rueckstellungen'; person: PersonId; vorher: RueckstellungEintrag[] }
+	| { typ: 'auftraege'; person: PersonId; vorher: AuftragEintrag[] };
 
 type Zeile = Record<string, unknown>;
 
@@ -371,20 +393,98 @@ export function speichereRueckstellungen(person: PersonId, liste: RueckstellungE
 
 // ---------- Gemeinschaftskonto ----------
 
+const json = <T>(wert: unknown): T | null => (wert ? (JSON.parse(wert as string) as T) : null);
+
 export function ladeGemeinschaft(): GemeinschaftEintrag {
 	const z = db().prepare('SELECT * FROM gemeinschaft WHERE id = 1').get() as Zeile;
-	return {
-		mieteCent: Number(z.miete_cent),
-		alltagCent: Number(z.alltag_cent),
-		ruecklageCent: Number(z.ruecklage_cent),
-		modell: z.modell as Aufteilungsmodell
-	};
+	const positionen = (
+		db().prepare('SELECT * FROM gemeinschaft_positionen ORDER BY sortierung, id').all() as Zeile[]
+	).map((p) => ({
+		id: Number(p.id),
+		name: p.name as string,
+		art: p.art as PositionEintrag['art'],
+		betragCent: Number(p.betrag_cent),
+		ausgang: json<Ausgang>(p.ausgang),
+		kategorie: { a: (p.kategorie_a as string | null) ?? null, b: (p.kategorie_b as string | null) ?? null }
+	}));
+	return { positionen, modell: z.modell as Aufteilungsmodell, rundung: json<Rundung>(z.rundung) };
 }
 
-function schreibeGemeinschaft(g: GemeinschaftEintrag) {
-	db()
-		.prepare('UPDATE gemeinschaft SET miete_cent = ?, alltag_cent = ?, ruecklage_cent = ?, modell = ? WHERE id = 1')
-		.run(g.mieteCent, g.alltagCent, g.ruecklageCent, g.modell);
+function schreibeGemeinschaft(g: Partial<GemeinschaftEintrag>) {
+	if (g.modell !== undefined || g.rundung !== undefined) {
+		const vorher = ladeGemeinschaft();
+		db()
+			.prepare('UPDATE gemeinschaft SET modell = ?, rundung = ? WHERE id = 1')
+			.run(g.modell ?? vorher.modell, JSON.stringify(g.rundung === undefined ? vorher.rundung : g.rundung));
+	}
+	if (g.positionen) {
+		db().exec('DELETE FROM gemeinschaft_positionen');
+		const einf = db().prepare(
+			`INSERT INTO gemeinschaft_positionen (name, art, betrag_cent, ausgang, kategorie_a, kategorie_b, sortierung)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`
+		);
+		g.positionen.forEach((p, i) =>
+			einf.run(
+				p.name,
+				p.art,
+				p.betragCent,
+				p.ausgang ? JSON.stringify(p.ausgang) : null,
+				p.kategorie?.a ?? null,
+				p.kategorie?.b ?? null,
+				i
+			)
+		);
+	}
+}
+
+/** Positionen aus einer Sicherung der ersten Version (Miete, Alltag, Rücklage). */
+function positionenAusAlt(g: Record<string, unknown>): PositionEintrag[] {
+	const zahl = (k: string) => Number(g[k] ?? 0);
+	const ohne = { a: null, b: null };
+	return [
+		{ name: 'Miete', art: 'fest', betragCent: zahl('mieteCent'), ausgang: { art: 'ueberweisung', ziel: 'Vermieter', tag: 1 }, kategorie: ohne },
+		{ name: 'Lebensmittel und Alltag', art: 'fest', betragCent: zahl('alltagCent'), ausgang: null, kategorie: ohne },
+		{ name: 'Gemeinsame Rücklage', art: 'fest', betragCent: zahl('ruecklageCent'), ausgang: { art: 'umbuchung', ziel: 'Gemeinschaftstagesgeld', tag: null }, kategorie: ohne },
+		{ name: 'Gemeinsame Fixkosten', art: 'fixkosten', betragCent: 0, ausgang: null, kategorie: ohne }
+	];
+}
+
+// ---------- Daueraufträge ----------
+
+function schreibeAuftraege(person: PersonId, liste: AuftragKonfig[]) {
+	db().prepare('DELETE FROM dauerauftraege WHERE person = ?').run(person);
+	const einf = db().prepare(
+		'INSERT INTO dauerauftraege (person, name, zielkonto, bausteine, rundung, sortierung) VALUES (?, ?, ?, ?, ?, ?)'
+	);
+	liste.forEach((a, i) =>
+		einf.run(person, a.name, a.zielkonto, JSON.stringify(a.bausteine), a.rundung ? JSON.stringify(a.rundung) : null, i)
+	);
+	db().prepare('INSERT OR REPLACE INTO merker (schluessel, wert) VALUES (?, ?)').run(`auftraege-${person}`, '1');
+}
+
+/** Die Daueraufträge der Person; beim ersten Aufruf aus den bisherigen Einstellungen angelegt. */
+export function ladeAuftraege(person: PersonId): AuftragEintrag[] {
+	const zeilen = db().prepare('SELECT * FROM dauerauftraege WHERE person = ? ORDER BY sortierung, id').all(person) as Zeile[];
+	if (!zeilen.length && !db().prepare('SELECT 1 FROM merker WHERE schluessel = ?').get(`auftraege-${person}`)) {
+		const p = ladePerson(person);
+		schreibeAuftraege(person, standardAuftraege(p.modus, p.etfProzent, ladeRueckstellungen(person)));
+		return ladeAuftraege(person);
+	}
+	return zeilen.map((z) => ({
+		id: Number(z.id),
+		name: z.name as string,
+		zielkonto: z.zielkonto as string,
+		bausteine: JSON.parse(z.bausteine as string) as Baustein[],
+		rundung: json<Rundung>(z.rundung)
+	}));
+}
+
+export function speichereAuftraege(person: PersonId, liste: AuftragKonfig[], wer: PersonId, text = 'Daueraufträge geändert') {
+	return inTransaktion(() => {
+		const vorher = ladeAuftraege(person);
+		schreibeAuftraege(person, liste);
+		return protokolliere(wer, `person-${person}`, text, { typ: 'auftraege', person, vorher });
+	});
 }
 
 export function aendereGemeinschaft(teil: Partial<GemeinschaftEintrag>, wer: PersonId, text: string) {
@@ -444,7 +544,11 @@ export function macheRueckgaengig(id: number, wer: PersonId): string | null {
 				schreibePerson(r.vorher);
 				break;
 			case 'gemeinschaft':
-				schreibeGemeinschaft(r.vorher);
+				// Einträge aus der ersten Version (ohne Positionen) lassen sich nicht mehr anwenden.
+				if (Array.isArray(r.vorher.positionen)) schreibeGemeinschaft(r.vorher);
+				break;
+			case 'auftraege':
+				schreibeAuftraege(r.person, r.vorher);
 				break;
 			case 'rueckstellungen':
 				schreibeRueckstellungen(r.person, r.vorher);
@@ -468,6 +572,7 @@ export interface Sicherung {
 	posten: PostenEintrag[];
 	rueckstellungen: RueckstellungEintrag[];
 	gemeinschaft: GemeinschaftEintrag;
+	auftraege?: { a: AuftragKonfig[]; b: AuftragKonfig[] };
 }
 
 export function exportiere(): Sicherung {
@@ -477,7 +582,8 @@ export function exportiere(): Sicherung {
 		personen: ladePersonen(),
 		posten: (['a', 'b', 'gemeinsam'] as const).flatMap((b) => ladePosten(b)),
 		rueckstellungen: [...ladeRueckstellungen('a'), ...ladeRueckstellungen('b')],
-		gemeinschaft: ladeGemeinschaft()
+		gemeinschaft: ladeGemeinschaft(),
+		auftraege: { a: ladeAuftraege('a'), b: ladeAuftraege('b') }
 	};
 }
 
@@ -494,7 +600,23 @@ export function importiere(s: Sicherung, wer: PersonId) {
 		for (const id of ['a', 'b'] as const) {
 			schreibeRueckstellungen(id, (s.rueckstellungen ?? []).filter((r) => r.person === id));
 		}
-		if (s.gemeinschaft) schreibeGemeinschaft({ ...ladeGemeinschaft(), ...s.gemeinschaft });
+		if (s.gemeinschaft) {
+			const g = s.gemeinschaft as GemeinschaftEintrag & Record<string, unknown>;
+			schreibeGemeinschaft({
+				modell: g.modell ?? 'A',
+				rundung: g.rundung ?? null,
+				positionen: Array.isArray(g.positionen) ? g.positionen : positionenAusAlt(g)
+			});
+		}
+		for (const id of ['a', 'b'] as const) {
+			const liste = s.auftraege?.[id];
+			if (liste) schreibeAuftraege(id, liste);
+			else {
+				// Ältere Sicherung: Daueraufträge beim nächsten Laden aus den Einstellungen neu anlegen.
+				db().prepare('DELETE FROM dauerauftraege WHERE person = ?').run(id);
+				db().prepare('DELETE FROM merker WHERE schluessel = ?').run(`auftraege-${id}`);
+			}
+		}
 		db().exec('DELETE FROM aenderungen');
 		db()
 			.prepare('INSERT INTO aenderungen (zeit, person, bereich, text) VALUES (?, ?, ?, ?)')

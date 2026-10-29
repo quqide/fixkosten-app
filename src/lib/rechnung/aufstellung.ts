@@ -1,4 +1,5 @@
-import { aufEuroAbrunden, aufEuroAufrunden } from './fixkosten';
+import { aufEuroAufrunden } from './fixkosten';
+import { runde, rundungText, type Rundung } from './rundung';
 
 /**
  * 1: Fixkosten gehen direkt vom Gehaltskonto ab, aufs Spaßkonto geht ein fester Betrag.
@@ -12,11 +13,31 @@ export interface Rueckstellung {
 	zielkonto?: string | null;
 }
 
+/** Woraus sich ein Dauerauftrag zusammensetzt. */
+export type Baustein =
+	| { typ: 'fest'; betragCent: number }
+	/** Prozent vom Netto, z. B. der ETF-Sparplan. */
+	| { typ: 'prozent'; prozent: number }
+	/** Der eigene Anteil am Gemeinschaftskonto. */
+	| { typ: 'gemeinschaft' }
+	/** Alle Rücklagen mit diesem Ziel (Konto oder WKN). */
+	| { typ: 'ruecklagen'; ziel: string }
+	/** Die Monatsrate fürs Fixkosten-Konto, auf volle Euro aufgerundet. */
+	| { typ: 'fixkosten' }
+	/** Was nach allen anderen Aufträgen (und in Modus 1 den Fixkosten) übrig bleibt. */
+	| { typ: 'rest' };
+
+export interface AuftragKonfig {
+	name: string;
+	zielkonto: string;
+	bausteine: Baustein[];
+	rundung?: Rundung | null;
+}
+
 export interface AufstellungEingaben {
 	modus: Kontenmodus;
 	nettoCent: number;
-	/** z. B. 20 für 20 %. */
-	etfQuoteProzent: number;
+	auftraege: AuftragKonfig[];
 	rueckstellungen: Rueckstellung[];
 	/** Eigener Anteil am Gemeinschaftskonto. */
 	gemeinschaftCent: number;
@@ -31,11 +52,9 @@ export interface Dauerauftrag {
 }
 
 export interface Monatsaufstellung {
-	etfCent: number;
-	rueckstellungenCent: number;
 	/** Was im Monat für Fixkosten eingeplant ist. */
 	fixkostenCent: number;
-	/** Frei verfügbar: in Modus 1 der Dauerauftrag aufs Spaßkonto, in Modus 2 der Rest. */
+	/** Frei verfügbar: der Rest-Auftrag (Spaßkonto) oder was auf dem Gehaltskonto frei bleibt. */
 	spassCent: number;
 	/** Bleibt nach den Daueraufträgen auf dem Gehaltskonto. */
 	verbleibtAufGehaltskontoCent: number;
@@ -43,55 +62,119 @@ export interface Monatsaufstellung {
 	warnungen: string[];
 }
 
-export function berechneAufstellung(e: AufstellungEingaben): Monatsaufstellung {
-	const etfCent = Math.round((e.nettoCent * e.etfQuoteProzent) / 100 / 100) * 100;
-	const rueckstellungenCent = e.rueckstellungen.reduce((s, r) => s + r.betragCent, 0);
+export const STANDARD_REST_RUNDUNG: Rundung = { schritt: 100, richtung: 'ab' };
+const ETF_RUNDUNG: Rundung = { schritt: 100, richtung: 'kaufm' };
 
-	const dauerauftraege: Dauerauftrag[] = [];
-	let fixkostenCent: number;
-	let spassCent: number;
+const istRest = (a: AuftragKonfig) => a.bausteine.some((b) => b.typ === 'rest');
+const ziel = (r: Rueckstellung) => (r.zielkonto ?? '').trim();
 
-	if (e.modus === 2) {
-		fixkostenCent = aufEuroAufrunden(e.fixkostenMonatlichCent);
-		dauerauftraege.push({ name: 'Fixkosten', zielkonto: 'Fixkosten-Konto', betragCent: fixkostenCent });
-	} else {
-		fixkostenCent = e.fixkostenMonatlichCent;
+/** Die Daueraufträge, wie sie die App ohne eigene Einrichtung anlegt. */
+export function standardAuftraege(
+	modus: Kontenmodus,
+	etfProzent: number,
+	rueckstellungen: Rueckstellung[]
+): AuftragKonfig[] {
+	const liste: AuftragKonfig[] = [];
+	if (modus === 2) liste.push({ name: 'Fixkosten', zielkonto: 'Fixkosten-Konto', bausteine: [{ typ: 'fixkosten' }] });
+	liste.push({ name: 'ETF-Sparplan', zielkonto: 'Depot', bausteine: [{ typ: 'prozent', prozent: etfProzent }], rundung: ETF_RUNDUNG });
+	const ziele = new Map<string, Rueckstellung[]>();
+	for (const r of rueckstellungen) {
+		if (r.betragCent === 0) continue;
+		ziele.set(ziel(r), [...(ziele.get(ziel(r)) ?? []), r]);
 	}
+	for (const [z, liste_] of ziele) {
+		liste.push({
+			name: liste_.length === 1 ? liste_[0].name : `Rücklagen ${z}`.trim(),
+			zielkonto: z,
+			bausteine: [{ typ: 'ruecklagen', ziel: z }]
+		});
+	}
+	liste.push({ name: 'Gemeinschaftskonto', zielkonto: 'Gemeinschaftskonto', bausteine: [{ typ: 'gemeinschaft' }] });
+	if (modus === 1) {
+		liste.push({ name: 'Spaßkonto', zielkonto: 'Spaßkonto', bausteine: [{ typ: 'rest' }], rundung: STANDARD_REST_RUNDUNG });
+	}
+	return liste;
+}
 
-	dauerauftraege.push({ name: 'ETF-Sparplan', zielkonto: 'Depot', betragCent: etfCent });
+export function bausteinWert(b: Baustein, e: AufstellungEingaben): number {
+	switch (b.typ) {
+		case 'fest':
+			return b.betragCent;
+		case 'prozent':
+			return (e.nettoCent * b.prozent) / 100;
+		case 'gemeinschaft':
+			return e.gemeinschaftCent;
+		case 'ruecklagen':
+			return e.rueckstellungen.filter((r) => ziel(r) === b.ziel.trim()).reduce((s, r) => s + r.betragCent, 0);
+		case 'fixkosten':
+			return aufEuroAufrunden(e.fixkostenMonatlichCent);
+		case 'rest':
+			return 0;
+	}
+}
+
+export function berechneAufstellung(e: AufstellungEingaben): Monatsaufstellung {
+	const warnungen: string[] = [];
+	const betraege = new Map<AuftragKonfig, number>();
+	for (const a of e.auftraege) {
+		if (istRest(a)) continue;
+		const roh = a.bausteine.reduce((s, b) => s + bausteinWert(b, e), 0);
+		betraege.set(a, Math.max(0, runde(roh, a.rundung)));
+	}
+	const summeFest = [...betraege.values()].reduce((s, b) => s + b, 0);
+	const fixkostenBleiben = e.modus === 1 ? e.fixkostenMonatlichCent : 0;
+	const rest = e.nettoCent - summeFest - fixkostenBleiben;
+
+	const restAuftraege = e.auftraege.filter(istRest);
+	if (restAuftraege.length > 1) warnungen.push('Nur ein Dauerauftrag kann den Rest bekommen. Die weiteren bekommen nichts.');
+	restAuftraege.forEach((a, i) => {
+		betraege.set(a, i === 0 ? Math.max(0, runde(rest, a.rundung ?? STANDARD_REST_RUNDUNG)) : 0);
+	});
+	if (rest < 0) warnungen.push('Die Ausgaben sind höher als das Netto. Es bleibt nichts frei verfügbar.');
+
+	const hatFixkostenRate = e.auftraege.some((a) => a.bausteine.some((b) => b.typ === 'fixkosten'));
+	if (e.modus === 2 && !hatFixkostenRate) {
+		warnungen.push('Im Modell „Eigenes Fixkosten-Konto“ fehlt der Dauerauftrag mit der Fixkosten-Rate.');
+	}
+	const abgedeckt = new Set(
+		e.auftraege.flatMap((a) => a.bausteine.flatMap((b) => (b.typ === 'ruecklagen' ? [b.ziel.trim()] : [])))
+	);
 	for (const r of e.rueckstellungen) {
-		if (r.betragCent !== 0) {
-			dauerauftraege.push({ name: r.name, zielkonto: r.zielkonto ?? '', betragCent: r.betragCent });
+		if (r.betragCent !== 0 && !abgedeckt.has(ziel(r))) {
+			warnungen.push(`Die Rücklage „${r.name}“ (Ziel ${ziel(r) || 'ohne Konto'}) überweist kein Dauerauftrag.`);
 		}
 	}
-	dauerauftraege.push({
-		name: 'Gemeinschaftskonto',
-		zielkonto: 'Gemeinschaftskonto',
-		betragCent: e.gemeinschaftCent
-	});
 
-	const rest = e.nettoCent - etfCent - rueckstellungenCent - e.gemeinschaftCent - fixkostenCent;
-	if (e.modus === 1) {
-		// Abrunden, damit die Fixkosten-Rücklage auf dem Gehaltskonto nie zu knapp wird.
-		spassCent = Math.max(0, aufEuroAbrunden(rest));
-		dauerauftraege.push({ name: 'Spaßkonto', zielkonto: 'Spaßkonto', betragCent: spassCent });
-	} else {
-		spassCent = rest;
-	}
-
-	const summeDauerauftraege = dauerauftraege.reduce((s, d) => s + d.betragCent, 0);
-	const warnungen: string[] = [];
-	if (rest < 0) {
-		warnungen.push('Die Ausgaben sind höher als das Netto. Es bleibt nichts frei verfügbar.');
-	}
-
+	const dauerauftraege = e.auftraege.map((a) => ({ name: a.name, zielkonto: a.zielkonto, betragCent: betraege.get(a) ?? 0 }));
+	const summe = dauerauftraege.reduce((s, d) => s + d.betragCent, 0);
+	const verbleibt = e.nettoCent - summe;
 	return {
-		etfCent,
-		rueckstellungenCent,
-		fixkostenCent,
-		spassCent,
-		verbleibtAufGehaltskontoCent: e.nettoCent - summeDauerauftraege,
+		fixkostenCent: e.modus === 2 ? aufEuroAufrunden(e.fixkostenMonatlichCent) : e.fixkostenMonatlichCent,
+		spassCent: restAuftraege.length ? (betraege.get(restAuftraege[0]) ?? 0) : Math.max(0, verbleibt - fixkostenBleiben),
+		verbleibtAufGehaltskontoCent: verbleibt,
 		dauerauftraege,
 		warnungen
 	};
+}
+
+/** Kurzbeschreibung eines Dauerauftrags für die Oberfläche, z. B. „20 % vom Netto, auf 10 € aufgerundet“. */
+export function beschreibeAuftrag(a: AuftragKonfig): string {
+	const teile = a.bausteine.map((b) => {
+		switch (b.typ) {
+			case 'fest':
+				return `${(b.betragCent / 100).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })} fest`;
+			case 'prozent':
+				return `${b.prozent.toLocaleString('de-DE')} % vom Netto`;
+			case 'gemeinschaft':
+				return 'dein Anteil am Gemeinschaftskonto';
+			case 'ruecklagen':
+				return b.ziel ? `Rücklagen mit Ziel ${b.ziel}` : 'Rücklagen ohne Ziel';
+			case 'fixkosten':
+				return 'Rate für deine Fixkosten';
+			case 'rest':
+				return 'was übrig bleibt';
+		}
+	});
+	const rundung = a.rundung && a.rundung.schritt > 1 ? `, ${rundungText(a.rundung)}` : '';
+	return teile.join(' + ') + rundung;
 }

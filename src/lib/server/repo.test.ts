@@ -5,7 +5,9 @@ import {
 	aenderePerson,
 	exportiere,
 	importiere,
+	ladeAuftraege,
 	ladeGemeinschaft,
+	speichereAuftraege,
 	ladePerson,
 	ladePosten,
 	loeschePosten,
@@ -30,7 +32,30 @@ describe('Datenhaltung', () => {
 	it('legt zwei Personen und ein leeres Gemeinschaftskonto an', () => {
 		expect(ladePerson('a').name).toBe('Person 1');
 		expect(ladePerson('b').ueberweisungstag).toBe(7);
-		expect(ladeGemeinschaft()).toEqual({ mieteCent: 0, alltagCent: 0, ruecklageCent: 0, modell: 'A' });
+		const g = ladeGemeinschaft();
+		expect(g.modell).toBe('A');
+		expect(g.positionen.map((p) => [p.name, p.art, p.betragCent])).toEqual([
+			['Miete', 'fest', 0],
+			['Lebensmittel und Alltag', 'fest', 0],
+			['Gemeinsame Rücklage', 'fest', 0],
+			['Gemeinsame Fixkosten', 'fixkosten', 0]
+		]);
+	});
+
+	it('legt Daueraufträge beim ersten Laden aus den Einstellungen an und macht Änderungen rückgängig', () => {
+		aenderePerson('a', { etfProzent: 20 }, 'a', 'ETF');
+		expect(ladeAuftraege('a').map((x) => x.name)).toEqual(['ETF-Sparplan', 'Gemeinschaftskonto', 'Spaßkonto']);
+		const undo = speichereAuftraege('a', [{ name: 'Nur Spaß', zielkonto: 'Spaßkonto', bausteine: [{ typ: 'rest' }] }], 'a');
+		expect(ladeAuftraege('a').map((x) => x.name)).toEqual(['Nur Spaß']);
+		macheRueckgaengig(undo, 'a');
+		expect(ladeAuftraege('a').map((x) => x.name)).toEqual(['ETF-Sparplan', 'Gemeinschaftskonto', 'Spaßkonto']);
+	});
+
+	it('übernimmt Miete, Alltag und Rücklage aus einer alten Sicherung als Positionen', () => {
+		const alt = { ...exportiere(), gemeinschaft: { mieteCent: 45000, alltagCent: 65000, ruecklageCent: 10000, modell: 'A' } };
+		delete (alt as { auftraege?: unknown }).auftraege;
+		importiere(alt as never, 'a');
+		expect(ladeGemeinschaft().positionen.map((p) => p.betragCent)).toEqual([45000, 65000, 10000, 0]);
 	});
 
 	it('speichert Posten mit Beteiligungen und trennt nach Besitzer', () => {
@@ -60,12 +85,14 @@ describe('Datenhaltung', () => {
 
 	it('macht Änderungen an Person und Gemeinschaftskonto nur einmal rückgängig', () => {
 		const u1 = aenderePerson('a', { name: 'Stephan', nettoCent: 345000 }, 'a', 'Profil');
-		const u2 = aendereGemeinschaft({ mieteCent: 45000 }, 'b', 'Miete');
+		const positionen = ladeGemeinschaft().positionen.map((p, i) => (i === 0 ? { ...p, betragCent: 45000 } : p));
+		const u2 = aendereGemeinschaft({ positionen }, 'b', 'Miete');
+		expect(ladeGemeinschaft().positionen[0]).toMatchObject({ name: 'Miete', betragCent: 45000 });
 		expect(macheRueckgaengig(u1, 'a')).toMatch(/Rückgängig/);
 		expect(ladePerson('a')).toMatchObject({ name: 'Person 1', nettoCent: 0 });
 		expect(macheRueckgaengig(u1, 'a')).toBeNull();
 		macheRueckgaengig(u2, 'a');
-		expect(ladeGemeinschaft().mieteCent).toBe(0);
+		expect(ladeGemeinschaft().positionen[0].betragCent).toBe(0);
 	});
 
 	it('spielt eine Sicherung vollständig wieder ein', () => {

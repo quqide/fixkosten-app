@@ -170,6 +170,28 @@ export function ladeAbgleich(
 					(a) => a.op === 'set' && a.field === 'category' && !(a.options as { splitIndex?: number } | undefined)?.splitIndex
 				);
 				const letzte = letzteJePlan.get(t.id);
+				// Aufteilung: je Teil (splitIndex ≥ 1) ein Betrag und eine Kategorie.
+				type Aktion = { op: string; field?: string; value?: unknown; options?: { splitIndex?: number; method?: string } };
+				const teile = new Map<number, { kategorieId: string | null; betragCent: number; methode: string }>();
+				for (const a of (regel?.actions ?? []) as Aktion[]) {
+					const index = a.options?.splitIndex;
+					if (!index) continue;
+					const teil = teile.get(index) ?? { kategorieId: null, betragCent: 0, methode: 'fixed-amount' };
+					if (a.op === 'set-split-amount') {
+						teil.methode = a.options?.method ?? 'fixed-amount';
+						const wert = Number(a.value) || 0;
+						// Prozent werden in Actual als Zahl wie 37,5 gespeichert.
+						teil.betragCent = teil.methode === 'fixed-percent' ? Math.round((Math.abs(cent) * wert) / 100) : Math.abs(wert);
+					}
+					if (a.op === 'set' && a.field === 'category') teil.kategorieId = (a.value as string) ?? null;
+					teile.set(index, teil);
+				}
+				// „Rest“-Teile bekommen, was nach den anderen übrig bleibt.
+				const rest = [...teile.values()].filter((t) => t.methode === 'remainder');
+				if (rest.length) {
+					const vergeben = [...teile.values()].filter((t) => t.methode !== 'remainder').reduce((s, t) => s + t.betragCent, 0);
+					rest[0].betragCent = Math.max(0, Math.abs(cent) - vergeben);
+				}
 				const empfaenger = t.payee ? (payeeName.get(t.payee) ?? null) : null;
 				return {
 					id: t.id,
@@ -184,7 +206,10 @@ export function ladeAbgleich(
 					naechsterTermin: t.next_date ?? null,
 					beendet: !!t.completed,
 					kategorieId: (kategorie?.value as string | undefined) ?? null,
-					letzteBuchung: letzte ? { datum: letzte.date, betragCent: -letzte.amount } : null
+					letzteBuchung: letzte ? { datum: letzte.date, betragCent: -letzte.amount } : null,
+					aufteilung: teile.size
+						? [...teile.entries()].sort(([x], [y]) => x - y).map(([, v]) => ({ kategorieId: v.kategorieId, betragCent: v.betragCent }))
+						: null
 				};
 			});
 
