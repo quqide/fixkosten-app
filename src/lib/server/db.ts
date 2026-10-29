@@ -68,7 +68,25 @@ export function oeffneDatenbank(pfad: string): DatabaseSync {
 	const db = new DatabaseSync(pfad);
 	db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
 	db.exec(SCHEMA);
+	ergaenzeSpalten(db);
 	return db;
+}
+
+/** Spalten, die nach der ersten Version dazukamen. */
+const NEUE_SPALTEN: [tabelle: string, spalte: string, definition: string][] = [
+	['personen', 'ist_quelle', "TEXT NOT NULL DEFAULT 'hand'"],
+	['personen', 'abgleich', 'TEXT'],
+	['personen', 'actual_konto_id', 'TEXT'],
+	['personen', 'actual_konto_name', 'TEXT']
+];
+
+function ergaenzeSpalten(db: DatabaseSync) {
+	for (const [tabelle, spalte, definition] of NEUE_SPALTEN) {
+		const vorhanden = (db.prepare(`PRAGMA table_info(${tabelle})`).all() as { name: string }[]).some(
+			(s) => s.name === spalte
+		);
+		if (!vorhanden) db.exec(`ALTER TABLE ${tabelle} ADD COLUMN ${spalte} ${definition}`);
+	}
 }
 
 let instanz: DatabaseSync | undefined;

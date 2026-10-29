@@ -1,6 +1,7 @@
 import type { Abbuchungsart, Art, Beteiligung, FixkostenPosten } from '#lib/rechnung/fixkosten.ts';
 import type { Aufteilungsmodell } from '#lib/rechnung/gemeinschaft.ts';
 import type { Kontenmodus } from '#lib/rechnung/aufstellung.ts';
+import type { Abgleich } from '#lib/rechnung/abgleich.ts';
 import { db, type Besitzer, type PersonId } from './db.ts';
 
 export type Hell = 'auto' | 'light' | 'dark';
@@ -17,6 +18,12 @@ export interface Person {
 	istDatum: string | null;
 	/** Gehalt ist da, die Daueraufträge des Monats aber noch nicht gebucht. */
 	istAusstehend: boolean;
+	/** Woher der Kontostand stammt: von Hand eingetragen oder aus Actual Budget. */
+	istQuelle: 'hand' | 'actual';
+	/** Was beim letzten Abruf aus Actual erkannt wurde. */
+	abgleich: Abgleich | null;
+	actualKontoId: string | null;
+	actualKontoName: string | null;
 	theme: string;
 	hell: Hell;
 }
@@ -90,6 +97,10 @@ function zuPerson(z: Zeile): Person {
 		istCent: z.ist_cent == null ? null : Number(z.ist_cent),
 		istDatum: (z.ist_datum as string | null) ?? null,
 		istAusstehend: Number(z.ist_ausstehend) === 1,
+		istQuelle: z.ist_quelle === 'actual' ? 'actual' : 'hand',
+		abgleich: z.abgleich ? (JSON.parse(z.abgleich as string) as Abgleich) : null,
+		actualKontoId: (z.actual_konto_id as string | null) ?? null,
+		actualKontoName: (z.actual_konto_name as string | null) ?? null,
 		theme: z.theme as string,
 		hell: z.hell as Hell
 	};
@@ -107,7 +118,8 @@ function schreibePerson(p: Person) {
 	db()
 		.prepare(
 			`UPDATE personen SET name = ?, netto_cent = ?, etf_prozent = ?, ueberweisungstag = ?, modus = ?,
-			puffer_cent = ?, ist_cent = ?, ist_datum = ?, ist_ausstehend = ?, theme = ?, hell = ? WHERE id = ?`
+			puffer_cent = ?, ist_cent = ?, ist_datum = ?, ist_ausstehend = ?, ist_quelle = ?, abgleich = ?,
+			actual_konto_id = ?, actual_konto_name = ?, theme = ?, hell = ? WHERE id = ?`
 		)
 		.run(
 			p.name,
@@ -119,10 +131,19 @@ function schreibePerson(p: Person) {
 			p.istCent,
 			p.istDatum,
 			p.istAusstehend ? 1 : 0,
+			p.istQuelle ?? 'hand',
+			p.abgleich ? JSON.stringify(p.abgleich) : null,
+			p.actualKontoId ?? null,
+			p.actualKontoName ?? null,
 			p.theme,
 			p.hell,
 			p.id
 		);
+}
+
+/** Abgerufene Werte (Kontostand aus Actual) ohne Eintrag im Verlauf speichern. */
+export function aktualisierePerson(id: PersonId, teil: Partial<Omit<Person, 'id'>>) {
+	schreibePerson({ ...ladePerson(id), ...teil });
 }
 
 export function aenderePerson(id: PersonId, teil: Partial<Omit<Person, 'id'>>, wer: PersonId, text: string) {

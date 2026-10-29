@@ -122,8 +122,42 @@
 </form>
 
 <div class="section">
-	<div class="section-head"><h2>Kontostand aus Actual Budget</h2></div>
-	<div class="card pad"><p class="help-text">Die Anbindung an Actual Budget kommt im nächsten Schritt. Bis dahin trägst du den Kontostand auf der Übersicht selbst ein.</p></div>
+	<div class="section-head"><h2>Kontostand aus Actual Budget</h2><span class="aside">freiwillig</span></div>
+	<div class="card">
+		{#if !data.actual}
+			<div class="field">
+				<p class="help-text">Wenn du Actual Budget nutzt, kann die App den Kontostand selbst abrufen und erkennen, ob Gehalt und Daueraufträge schon gebucht sind. Ohne Actual trägst du den Kontostand einfach auf der Übersicht ein.</p>
+				<details class="einrichten">
+					<summary>So richtest du es ein</summary>
+					<p class="help-text">Trag in Dockge beim Stack diese Umgebungsvariablen ein und starte ihn neu. Für die zweite Person heißen sie ACTUAL_B_… statt ACTUAL_A_….</p>
+					<pre>ACTUAL_{p.id.toUpperCase()}_URL=http://actual:5006
+ACTUAL_{p.id.toUpperCase()}_PASSWORD=dein Actual-Passwort
+ACTUAL_{p.id.toUpperCase()}_SYNC_ID=Sync-ID aus Actual (Einstellungen → Erweitert)</pre>
+					<p class="help-text">Ist dein Budget Ende-zu-Ende-verschlüsselt, kommt noch ACTUAL_{p.id.toUpperCase()}_E2E_PASSWORD dazu.</p>
+				</details>
+			</div>
+		{:else}
+			<form class="field" method="POST" action="?/actualKonto" use:enhance={mitRueckmeldung()}>
+				<label for="konto">Welches Konto zeigt die Übersicht?</label>
+				{#await data.actualKonten}
+					<span class="help">Konten werden aus Actual geladen …</span>
+				{:then ergebnis}
+					{#if ergebnis?.fehler}
+						<span class="error">{ergebnis.fehler}</span>
+					{:else}
+						<select id="konto" name="konto" onchange={(e) => e.currentTarget.form?.requestSubmit()} aria-describedby="konto-h">
+							<option value="" selected={!p.actualKontoId}>Keins, Kontostand von Hand eintragen</option>
+							{#each ergebnis?.konten ?? [] as k (k.id)}
+								<option value="{k.id}|{k.name}" selected={p.actualKontoId === k.id}>{k.name}</option>
+							{/each}
+						</select>
+						<span class="help" id="konto-h">Wähl dein {p.modus === 1 ? 'Gehaltskonto' : 'Fixkosten-Konto'}. Die App liest nur, sie ändert nichts in Actual.</span>
+						<noscript><button class="secondary" type="submit">Übernehmen</button></noscript>
+					{/if}
+				{/await}
+			</form>
+		{/if}
+	</div>
 </div>
 
 <div class="section">
@@ -172,6 +206,8 @@
 	.entfernen { justify-self: start; color: var(--warm); }
 	.buttons { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; }
 	.help-text { margin: 0; color: var(--secondary); }
+	.einrichten summary { cursor: pointer; color: var(--tint); font-weight: 600; min-height: 44px; display: flex; align-items: center; }
+	.einrichten pre { background: var(--fill); border-radius: 10px; padding: 12px; font-size: 13px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; margin: 8px 0; }
 	.swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
 	.swatch { border: 2px solid var(--separator); background: var(--surface); border-radius: 14px; padding: 12px; cursor: pointer; display: grid; gap: 10px; }
 	.swatch:has(input:checked) { border-color: var(--tint); box-shadow: 0 0 0 3px color-mix(in srgb, var(--tint) 20%, transparent); }

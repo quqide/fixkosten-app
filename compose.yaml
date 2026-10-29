@@ -12,5 +12,9 @@ services:
       # AUTH_HEADER: X-authentik-username
       # PERSON_A_USER: stephan
       # PERSON_B_USER: partnerin
+      # Optional: Kontostand aus Actual Budget (für Person 2 ACTUAL_B_…)
+      # ACTUAL_A_URL: http://192.168.1.10:5006
+      # ACTUAL_A_PASSWORD: ${ACTUAL_A_PASSWORD}
+      # ACTUAL_A_SYNC_ID: 00000000-0000-0000-0000-000000000000
     volumes:
       - /mnt/POOL/apps/fixkosten:/data

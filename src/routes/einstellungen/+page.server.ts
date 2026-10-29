@@ -1,6 +1,7 @@
 import { fail } from '@sveltejs/kit';
 import { leseBetrag, leseGanzzahl, leseProzent } from '#lib/eingabe.ts';
 import { angemeldet } from '#lib/server/aktionen.ts';
+import { ActualFehler, actualEingerichtet, ladeKonten, type ActualKonto } from '#lib/server/actual.ts';
 import {
 	aenderePerson,
 	importiere,
@@ -16,9 +17,22 @@ import {
 import { THEMES } from '#lib/themes.ts';
 import type { Actions, PageServerLoad } from './$types';
 
+async function kontenOderFehler(id: 'a' | 'b'): Promise<{ konten: ActualKonto[]; fehler?: string }> {
+	try {
+		return { konten: await ladeKonten(id) };
+	} catch (e) {
+		if (!(e instanceof ActualFehler)) console.error('Actual-Konten nicht geladen', e);
+		return { konten: [], fehler: e instanceof ActualFehler ? e.message : 'Die Konten ließen sich nicht laden.' };
+	}
+}
+
 export const load: PageServerLoad = ({ locals }) => {
 	const id = angemeldet(locals);
+	const actual = actualEingerichtet(id);
 	return {
+		actual,
+		// Wird nachgeliefert, damit die Seite nicht auf Actual warten muss.
+		actualKonten: actual ? kontenOderFehler(id) : null,
 		person: ladePerson(id),
 		rueckstellungen: ladeRueckstellungen(id),
 		verlauf: letzteAenderungen(15),
@@ -88,6 +102,21 @@ export const actions: Actions = {
 		if (!THEMES[theme] || !['auto', 'light', 'dark'].includes(hell)) return fail(400, { bereich: 'darstellung', fehler: {} });
 		aenderePerson(wer, { theme, hell }, wer, 'Darstellung geändert');
 		return {};
+	},
+
+	actualKonto: async ({ request, locals }) => {
+		const wer = angemeldet(locals);
+		const wahl = String((await request.formData()).get('konto') ?? '');
+		const [kontoId, ...name] = wahl.split('|');
+		const undoId = aenderePerson(
+			wer,
+			kontoId
+				? { actualKontoId: kontoId, actualKontoName: name.join('|'), istQuelle: 'hand', abgleich: null }
+				: { actualKontoId: null, actualKontoName: null, istQuelle: 'hand', abgleich: null },
+			wer,
+			kontoId ? 'Konto in Actual gewählt' : 'Actual-Anbindung ausgeschaltet'
+		);
+		return { meldung: kontoId ? 'Konto gewählt. Der Kontostand kommt jetzt aus Actual.' : 'Kontostand wieder von Hand.', undoId };
 	},
 
 	import: async ({ request, locals }) => {
