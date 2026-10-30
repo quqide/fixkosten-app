@@ -58,7 +58,6 @@ export function lesePosten(f: FormData, besitzer: Besitzer): { eintrag: PostenEi
 	if (Object.keys(fehler).length) return { fehler };
 	return {
 		eintrag: {
-			vertrag,
 			id: idText ? Number(idText) : undefined,
 			besitzer,
 			name,
@@ -70,6 +69,7 @@ export function lesePosten(f: FormData, besitzer: Besitzer): { eintrag: PostenEi
 				? (abbuchungsart as Abbuchungsart)
 				: null,
 			icon: istPostenIcon(icon) ? icon : null,
+			vertrag,
 			beteiligungen
 		}
 	};
@@ -95,7 +95,7 @@ export function pruefeVertrag(roh: unknown): { vertrag: Vertrag | null } | { feh
 	if (r.kuendigungsfrist != null) {
 		const f = r.kuendigungsfrist as Record<string, unknown>;
 		if (!Number.isInteger(f.anzahl) || (f.anzahl as number) < 0 || (f.anzahl as number) > 999) {
-			fehler.v_frist = 'Die Kündigungsfrist muss eine ganze Zahl ab 0 sein.';
+			fehler.v_frist = 'Die Kündigungsfrist muss eine ganze Zahl zwischen 0 und 999 sein.';
 		} else if (!FRIST_EINHEITEN.includes(f.einheit as FristEinheit)) {
 			fehler.v_frist = 'Bitte Tage, Wochen oder Monate wählen.';
 		} else frist = { anzahl: f.anzahl as number, einheit: f.einheit as FristEinheit };

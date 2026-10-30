@@ -50,4 +50,11 @@ describe('Letzter Kündigungstag', () => {
 			status: 'abgelaufen'
 		});
 	});
+
+	it('sehr altes Ende mit Verlängerung rückt bis zum Stichtag vor', () => {
+		const k = letzterKuendigungstag(v({ laufzeitEnde: '1900-01-31', verlaengerungMonate: 1 }), '2026-10-30');
+		expect(k).toMatchObject({ laufzeitEnde: '2026-10-31', status: 'laeuft' });
+		expect(letzterKuendigungstag(v({ laufzeitEnde: '2020-03-31', verlaengerungMonate: 12 }), '2026-03-31')?.laufzeitEnde).toBe('2026-03-31');
+		expect(letzterKuendigungstag(v({ laufzeitEnde: '2020-03-31', verlaengerungMonate: 12 }), '2026-04-01')?.laufzeitEnde).toBe('2027-03-31');
+	});
 });

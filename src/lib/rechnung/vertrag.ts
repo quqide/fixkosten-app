@@ -60,7 +60,11 @@ export function letzterKuendigungstag(v: Vertrag | null | undefined, stichtag: I
 	if (vergleiche(ende, heute) < 0) {
 		if (v.verlaengerungMonate && v.verlaengerungMonate > 0) {
 			// Immer vom ursprünglichen Ende aus rechnen, damit ein kurzer Monat den Tag nicht dauerhaft verschiebt.
-			for (let n = 1; vergleiche(ende, heute) < 0 && n < 10_000; n++) ende = plusMonate(start, n * v.verlaengerungMonate);
+			const schritt = v.verlaengerungMonate;
+			const monate = (heute.j - start.j) * 12 + (heute.m - start.m);
+			let n = Math.max(1, Math.floor(monate / schritt));
+			ende = plusMonate(start, n * schritt);
+			while (vergleiche(ende, heute) < 0) ende = plusMonate(start, ++n * schritt);
 		} else status = 'abgelaufen';
 	}
 	return { laufzeitEnde: formatDatum(ende), letzterKuendigungstag: formatDatum(minusFrist(ende, v.kuendigungsfrist)), status };

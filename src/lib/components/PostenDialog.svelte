@@ -27,10 +27,13 @@
 	let vVerl = $state('');
 	let vKunde = $state('');
 	let vNotiz = $state('');
-	const vertragOffen = $derived(!!(vEnde || vFrist || vVerl || vKunde || vNotiz) || Object.keys(fehler).some((k) => k.startsWith('v_')));
+	// Nur beim Öffnen und bei Fehlern aufklappen, sonst entscheidet der Nutzer.
+	let vertragOffen = $state(false);
 	const kuendigung = $derived.by(() => {
 		const anzahl = Number(vFrist);
 		const verl = Number(vVerl);
+		// Eine ungültige Frist würde wie „keine Frist“ rechnen und einen zu späten Tag zeigen.
+		if (vFrist && !(Number.isInteger(anzahl) && anzahl >= 0)) return null;
 		try {
 			return letzterKuendigungstag(
 				{
@@ -66,6 +69,7 @@
 			vVerl = v?.verlaengerungMonate ? String(v.verlaengerungMonate) : '';
 			vKunde = v?.kundennummer ?? '';
 			vNotiz = v?.notiz ?? '';
+			vertragOffen = !!(vEnde || vFrist || vVerl || vKunde || vNotiz);
 			beteiligungen = (posten.beteiligungen ?? []).map((b) => ({
 				name: b.name,
 				betrag: betragFeld(b.betragCent),
@@ -84,6 +88,7 @@
 	const absenden: SubmitFunction = () => async ({ result, update }) => {
 		if (result.type === 'failure') {
 			fehler = (result.data?.fehler as Record<string, string>) ?? {};
+			if (Object.keys(fehler).some((k) => k.startsWith('v_'))) vertragOffen = true;
 			return;
 		}
 		if (result.type === 'error') {
@@ -228,12 +233,12 @@
 				</div>
 
 				<div class="card">
-					<details class="field vertrag" open={vertragOffen}>
+					<details class="field vertrag" bind:open={vertragOffen}>
 						<summary>
 							<span class="label">Vertrag</span>
 							<span class="help">{kuendigung ? (kuendigung.status === 'abgelaufen' ? 'Laufzeit ist vorbei' : `Kündigen bis ${datumLang(kuendigung.letzterKuendigungstag)}`) : 'Laufzeit, Kündigungsfrist, Kundennummer'}</span>
 						</summary>
-						<span class="help">Nur für dich in der App{ausActual ? ', Actual kennt diese Angaben nicht' : ''}. Alles ist freiwillig.</span>
+						<span class="help">Nur in der App gespeichert{ausActual ? ', Actual kennt diese Angaben nicht' : ''}. Alles ist freiwillig.</span>
 						<div class="inline-fields">
 							<label class="mini"><span>Läuft bis</span>
 								<input type="date" name="v_ende" bind:value={vEnde} aria-invalid={!!fehler.v_ende} />
