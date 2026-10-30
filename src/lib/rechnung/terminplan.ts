@@ -32,8 +32,32 @@ export type Rolle =
 	| { typ: 'dauerauftrag'; name: string }
 	| { typ: 'ignorieren' };
 
+/** Fester Schlüssel je Prüfung, unabhängig vom Text. */
+export type WarnungArt =
+	| 'ohne-rolle'
+	| 'beendet'
+	| 'rhythmus'
+	| 'sonderregel-tag'
+	| 'ungefaehr'
+	| 'anderes-konto'
+	| 'ueberfaellig'
+	| 'ohne-kategorie'
+	| 'umbuchung'
+	| 'preisabweichung'
+	| 'auftrag-fehlt'
+	| 'auftrag-betrag'
+	| 'split-fehlt'
+	| 'split-abweichung'
+	| 'split-unbekannt'
+	| 'duplikat'
+	| 'geloescht'
+	| 'gehalt-kategorie'
+	| 'gehalt-leer';
+
 export interface Warnung {
+	art: WarnungArt;
 	stufe: 'warnung' | 'hinweis';
+	/** Der Terminplan, um den es geht, wenn es genau einer ist (bei „geloescht“ die am Posten gespeicherte ID). */
 	terminplanId: string | null;
 	/** Was nicht passt, in einem Satz. */
 	text: string;
@@ -105,6 +129,7 @@ export function pruefeTerminplaene(e: PruefungEingaben): Warnung[] {
 	const neu = offen.filter((t) => !e.zuordnung.has(t.id) && t.kontoId === e.kontoId);
 	if (neu.length) {
 		w.push({
+			art: 'ohne-rolle',
 			stufe: 'hinweis',
 			terminplanId: null,
 			text: `${neu.length === 1 ? 'Ein Terminplan ist' : `${neu.length} Terminpläne sind`} noch keiner Rolle zugeordnet.`,
@@ -119,6 +144,7 @@ export function pruefeTerminplaene(e: PruefungEingaben): Warnung[] {
 
 		if (t.beendet) {
 			w.push({
+				art: 'beendet',
 				stufe: 'hinweis',
 				terminplanId: t.id,
 				text: `${name} ist in Actual beendet.`,
@@ -128,6 +154,7 @@ export function pruefeTerminplaene(e: PruefungEingaben): Warnung[] {
 		}
 		if (intervallMonate(t) == null) {
 			w.push({
+				art: 'rhythmus',
 				stufe: 'warnung',
 				terminplanId: t.id,
 				text: `${name} wiederholt sich nicht monatlich oder jährlich und lässt sich nicht übernehmen.`,
@@ -135,6 +162,7 @@ export function pruefeTerminplaene(e: PruefungEingaben): Warnung[] {
 			});
 		} else if (t.rhythmus?.muster) {
 			w.push({
+				art: 'sonderregel-tag',
 				stufe: 'hinweis',
 				terminplanId: t.id,
 				text: `${name} nutzt eine Sonderregel für den Tag.`,
@@ -143,6 +171,7 @@ export function pruefeTerminplaene(e: PruefungEingaben): Warnung[] {
 		}
 		if (t.betragArt !== 'fest') {
 			w.push({
+				art: 'ungefaehr',
 				stufe: 'hinweis',
 				terminplanId: t.id,
 				text: `${name} hat keinen festen Betrag. Die App rechnet mit ${eur(t.betragCent)}.`,
@@ -151,6 +180,7 @@ export function pruefeTerminplaene(e: PruefungEingaben): Warnung[] {
 		}
 		if (t.kontoId !== e.kontoId && rolle.typ === 'fixkosten') {
 			w.push({
+				art: 'anderes-konto',
 				stufe: 'warnung',
 				terminplanId: t.id,
 				text: `${name} wird von ${t.kontoName ?? 'einem anderen Konto'} abgebucht, nicht von ${e.kontoName ?? 'deinem gewählten Konto'}.`,
@@ -159,6 +189,7 @@ export function pruefeTerminplaene(e: PruefungEingaben): Warnung[] {
 		}
 		if (t.naechsterTermin && tageZwischen(t.naechsterTermin, e.heute) > 3) {
 			w.push({
+				art: 'ueberfaellig',
 				stufe: 'warnung',
 				terminplanId: t.id,
 				text: `${name} war am ${t.naechsterTermin.split('-').reverse().join('.')} fällig, Actual hat aber keine Buchung dazu.`,
@@ -168,6 +199,7 @@ export function pruefeTerminplaene(e: PruefungEingaben): Warnung[] {
 		if (rolle.typ === 'fixkosten') {
 			if (!t.kategorieId) {
 				w.push({
+					art: 'ohne-kategorie',
 					stufe: 'warnung',
 					terminplanId: t.id,
 					text: `${name} hat keine Kategorie.`,
@@ -176,6 +208,7 @@ export function pruefeTerminplaene(e: PruefungEingaben): Warnung[] {
 			}
 			if (t.umbuchung) {
 				w.push({
+					art: 'umbuchung',
 					stufe: 'hinweis',
 					terminplanId: t.id,
 					text: `${name} ist eine Umbuchung zwischen deinen Konten.`,
@@ -184,6 +217,7 @@ export function pruefeTerminplaene(e: PruefungEingaben): Warnung[] {
 			}
 			if (t.letzteBuchung && weichtAb(t, t.letzteBuchung.betragCent)) {
 				w.push({
+					art: 'preisabweichung',
 					stufe: 'warnung',
 					terminplanId: t.id,
 					text: `${name}: Zuletzt wurden ${eur(t.letzteBuchung.betragCent)} abgebucht, geplant sind ${eur(t.betragCent)}.`,
@@ -194,6 +228,7 @@ export function pruefeTerminplaene(e: PruefungEingaben): Warnung[] {
 			const auftrag = e.dauerauftraege.find((d) => d.name === rolle.name);
 			if (!auftrag) {
 				w.push({
+					art: 'auftrag-fehlt',
 					stufe: 'hinweis',
 					terminplanId: t.id,
 					text: `${name} ist dem Dauerauftrag „${rolle.name}“ zugeordnet, den es nicht mehr gibt.`,
@@ -201,6 +236,7 @@ export function pruefeTerminplaene(e: PruefungEingaben): Warnung[] {
 				});
 			} else if (Math.abs(auftrag.betragCent - t.betragCent) > ABWEICHUNG_CENT) {
 				w.push({
+					art: 'auftrag-betrag',
 					stufe: 'warnung',
 					terminplanId: t.id,
 					text: `${rolle.name}: In Actual stehen ${eur(t.betragCent)}, berechnet sind ${eur(auftrag.betragCent)}.`,
@@ -219,6 +255,7 @@ export function pruefeTerminplaene(e: PruefungEingaben): Warnung[] {
 		const kat = (id: string | null) => (id ? (e.kategorieName?.(id) ?? id) : 'ohne Kategorie');
 		if (plan && !plan.aufteilung?.length) {
 			w.push({
+				art: 'split-fehlt',
 				stufe: 'hinweis',
 				terminplanId: plan.id,
 				text: `„${plan.name}“ ist nicht nach Kategorien aufgeteilt.`,
@@ -238,6 +275,7 @@ export function pruefeTerminplaene(e: PruefungEingaben): Warnung[] {
 				const ist = plan.aufteilung.filter((a) => a.kategorieId === kategorieId).reduce((s, a) => s + a.betragCent, 0);
 				if (ist !== g.betragCent) {
 					w.push({
+						art: 'split-abweichung',
 						stufe: 'warnung',
 						terminplanId: plan.id,
 						text: `${soll.auftrag}/${g.namen.join(' + ')}: In Actual ${eur(ist)}, berechnet ${eur(g.betragCent)}.`,
@@ -249,6 +287,7 @@ export function pruefeTerminplaene(e: PruefungEingaben): Warnung[] {
 			for (const a of plan.aufteilung) {
 				if (!erwartet.has(a.kategorieId)) {
 					w.push({
+						art: 'split-unbekannt',
 						stufe: 'hinweis',
 						terminplanId: plan.id,
 						text: `„${plan.name}“ hat einen Teil für ${kat(a.kategorieId)}, den keine Position des Gemeinschaftskontos nutzt.`,
@@ -267,6 +306,7 @@ export function pruefeTerminplaene(e: PruefungEingaben): Warnung[] {
 		const erster = gesehen.get(schluessel);
 		if (erster) {
 			w.push({
+				art: 'duplikat',
 				stufe: 'hinweis',
 				terminplanId: t.id,
 				text: `„${t.name}“ und „${erster.name}“ sehen gleich aus.`,
@@ -279,6 +319,7 @@ export function pruefeTerminplaene(e: PruefungEingaben): Warnung[] {
 	for (const p of e.verknuepft) {
 		if (!ids.has(p.terminplanId)) {
 			w.push({
+				art: 'geloescht',
 				stufe: 'hinweis',
 				terminplanId: p.terminplanId,
 				text: `Den Terminplan zu „${p.name}“ gibt es in Actual nicht mehr.`,
@@ -289,6 +330,7 @@ export function pruefeTerminplaene(e: PruefungEingaben): Warnung[] {
 
 	if (!e.gehaltKategorie) {
 		w.push({
+			art: 'gehalt-kategorie',
 			stufe: 'hinweis',
 			terminplanId: null,
 			text: 'Es ist keine Gehaltskategorie gewählt. Die App erkennt das Gehalt nur am Betrag.',
@@ -296,6 +338,7 @@ export function pruefeTerminplaene(e: PruefungEingaben): Warnung[] {
 		});
 	} else if (!e.letztesGehalt || tageZwischen(e.letztesGehalt, e.heute) > 35) {
 		w.push({
+			art: 'gehalt-leer',
 			stufe: 'hinweis',
 			terminplanId: null,
 			text: 'In der Gehaltskategorie gab es seit über einem Monat keine Buchung.',

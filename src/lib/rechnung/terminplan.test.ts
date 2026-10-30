@@ -236,3 +236,93 @@ describe('Vorschlag für neue Terminpläne', () => {
 		expect(schlageRolleVor(plan({ id: 'x', betragCent: -345000 }), 'giro', auftraege)).toEqual({ typ: 'ignorieren' });
 	});
 });
+
+describe('Art und Terminplan jeder Meldung', () => {
+	const arten = (e: PruefungEingaben) => pruefeTerminplaene(e).map((w) => [w.art, w.terminplanId]);
+
+	it('Prüfungen je Terminplan', () => {
+		const e = basis(
+			[
+				plan({ id: 'neu' }),
+				plan({ id: 'alt', beendet: true }),
+				plan({ id: 'woche', rhythmus: { frequenz: 'weekly', intervall: 1, muster: false } }),
+				plan({ id: 'muster', rhythmus: { frequenz: 'monthly', intervall: 1, muster: true } }),
+				plan({ id: 'ungefaehr', betragArt: 'ungefaehr' }),
+				plan({ id: 'kredit', kontoId: 'kk', kontoName: 'Kreditkarte' }),
+				plan({ id: 'faellig', naechsterTermin: '2026-10-15' }),
+				plan({ id: 'ohneKat', kategorieId: null }),
+				plan({ id: 'umbuchung', umbuchung: true }),
+				plan({ id: 'teurer', letzteBuchung: { datum: '2026-10-15', betragCent: 1399 } }),
+				plan({ id: 'weg', betragCent: 5000 }),
+				plan({ id: 'spass', betragCent: 124000 })
+			],
+			[
+				['alt', fix],
+				['woche', fix],
+				['muster', fix],
+				['ungefaehr', fix],
+				['kredit', fix],
+				['faellig', fix],
+				['ohneKat', fix],
+				['umbuchung', fix],
+				['teurer', fix],
+				['weg', { typ: 'dauerauftrag', name: 'Gibt es nicht' }],
+				['spass', { typ: 'dauerauftrag', name: 'Spaßkonto' }]
+			]
+		);
+		const a = arten(e);
+		expect(a).toContainEqual(['ohne-rolle', null]);
+		expect(a).toContainEqual(['beendet', 'alt']);
+		expect(a).toContainEqual(['rhythmus', 'woche']);
+		expect(a).toContainEqual(['sonderregel-tag', 'muster']);
+		expect(a).toContainEqual(['ungefaehr', 'ungefaehr']);
+		expect(a).toContainEqual(['anderes-konto', 'kredit']);
+		expect(a).toContainEqual(['ueberfaellig', 'faellig']);
+		expect(a).toContainEqual(['ohne-kategorie', 'ohneKat']);
+		expect(a).toContainEqual(['umbuchung', 'umbuchung']);
+		expect(a).toContainEqual(['preisabweichung', 'teurer']);
+		expect(a).toContainEqual(['auftrag-fehlt', 'weg']);
+		expect(a).toContainEqual(['auftrag-betrag', 'spass']);
+		expect(a).toHaveLength(12);
+	});
+
+	it('Doppelte, gelöschte und Gehalt', () => {
+		const e = basis(
+			[plan({ id: 'netflix1', empfaenger: 'Netflix' }), plan({ id: 'netflix2', empfaenger: 'Netflix' })],
+			[
+				['netflix1', fix],
+				['netflix2', fix]
+			]
+		);
+		e.verknuepft = [{ name: 'Zeitung', terminplanId: 'weg' }];
+		e.gehaltKategorie = null;
+		expect(arten(e)).toEqual([
+			['duplikat', 'netflix2'],
+			['geloescht', 'weg'],
+			['gehalt-kategorie', null]
+		]);
+		e.gehaltKategorie = 'gehalt';
+		e.letztesGehalt = null;
+		expect(arten(e)).toContainEqual(['gehalt-leer', null]);
+	});
+
+	it('Aufteilung des Gemeinschafts-Dauerauftrags', () => {
+		const rolle: Rolle = { typ: 'dauerauftrag', name: 'Gemeinschaftskonto' };
+		const mit = (aufteilung: Terminplan['aufteilung']) => {
+			const e = basis([plan({ id: 'gem', betragCent: 69674, aufteilung })], [['gem', rolle]]);
+			e.dauerauftraege = [{ name: 'Gemeinschaftskonto', zielkonto: '', betragCent: 69674 }];
+			e.gemeinschaft = { auftrag: 'Gemeinschaftskonto', teile: [{ name: 'Miete', kategorieId: 'miete', betragCent: 69674 }] };
+			return arten(e);
+		};
+		expect(mit(null)).toEqual([['split-fehlt', 'gem']]);
+		expect(
+			mit([
+				{ kategorieId: 'miete', betragCent: 60000 },
+				{ kategorieId: 'urlaub', betragCent: 9674 }
+			])
+		).toEqual([
+			['split-abweichung', 'gem'],
+			['split-unbekannt', 'gem']
+		]);
+	});
+});
