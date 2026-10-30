@@ -5,9 +5,10 @@ import type { Rundung } from '#lib/rechnung/rundung.ts';
 import type { Abgleich } from '#lib/rechnung/abgleich.ts';
 import { type RueckstellungKonfig, type RueckstellungsArt } from '#lib/rechnung/rueckstellung.ts';
 import { db, legeAuftraegeAn, transaktion, type Besitzer, type PersonId } from './db.ts';
-import { pruefeAuftraege } from './formular.ts';
+import { pruefeAuftraege, pruefeVertrag } from './formular.ts';
 import { istPostenIcon } from '#lib/postenIcons.ts';
 import { AUSBLENDBARE_ARTEN, type WarnungArt } from '#lib/rechnung/terminplan.ts';
+import { istLeer, type FristEinheit, type Vertrag } from '#lib/rechnung/vertrag.ts';
 
 export type Hell = 'auto' | 'light' | 'dark';
 
@@ -205,8 +206,21 @@ function zuPosten(z: Zeile): PostenEintrag {
 		buchungsdatum: (z.buchungsdatum as string | null) ?? null,
 		actualTerminplan: (z.actual_terminplan as string | null) ?? null,
 		icon: (z.icon as string | null) ?? null,
+		vertrag: vertragAus(z),
 		beteiligungen: ladeBeteiligungen(Number(z.id))
 	};
+}
+
+function vertragAus(z: Zeile): Vertrag | null {
+	const v: Vertrag = {
+		laufzeitEnde: (z.vertrag_ende as string | null) ?? null,
+		kuendigungsfrist:
+			z.kuendigung_anzahl == null ? null : { anzahl: Number(z.kuendigung_anzahl), einheit: z.kuendigung_einheit as FristEinheit },
+		verlaengerungMonate: z.verlaengerung_monate == null ? null : Number(z.verlaengerung_monate),
+		kundennummer: (z.kundennummer as string | null) ?? null,
+		notiz: (z.notiz as string | null) ?? null
+	};
+	return istLeer(v) ? null : v;
 }
 
 export function ladePosten(besitzer: Besitzer): PostenEintrag[] {
@@ -232,33 +246,33 @@ function schreibePosten(p: PostenEintrag, id?: number): number {
 		p.abbuchungsart ?? null,
 		p.buchungsdatum ?? null,
 		p.actualTerminplan ?? null,
-		p.icon ?? null
+		p.icon ?? null,
+		p.vertrag?.laufzeitEnde ?? null,
+		p.vertrag?.kuendigungsfrist?.anzahl ?? null,
+		p.vertrag?.kuendigungsfrist?.einheit ?? null,
+		p.vertrag?.verlaengerungMonate ?? null,
+		p.vertrag?.kundennummer ?? null,
+		p.vertrag?.notiz ?? null
 	] as const;
+	const spalten = `besitzer, name, intervall, betrag_cent, art, abbuchungsart, buchungsdatum, actual_terminplan, icon,
+		vertrag_ende, kuendigung_anzahl, kuendigung_einheit, verlaengerung_monate, kundennummer, notiz`;
+	const platzhalter = werte.map(() => '?').join(', ');
 	let postenId: number;
 	if (id != null) {
 		const vorhanden = db().prepare('SELECT id FROM posten WHERE id = ?').get(id);
 		if (vorhanden) {
 			db()
-				.prepare(
-					`UPDATE posten SET besitzer = ?, name = ?, intervall = ?, betrag_cent = ?, art = ?, abbuchungsart = ?,
-					buchungsdatum = ?, actual_terminplan = ?, icon = ? WHERE id = ?`
-				)
+				.prepare(`UPDATE posten SET (${spalten}) = (${platzhalter}) WHERE id = ?`)
 				.run(...werte, id);
 		} else {
 			db()
-				.prepare(
-					`INSERT INTO posten (besitzer, name, intervall, betrag_cent, art, abbuchungsart, buchungsdatum,
-					actual_terminplan, icon, id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-				)
+				.prepare(`INSERT INTO posten (${spalten}, id) VALUES (${platzhalter}, ?)`)
 				.run(...werte, id);
 		}
 		postenId = id;
 	} else {
 		const r = db()
-			.prepare(
-				`INSERT INTO posten (besitzer, name, intervall, betrag_cent, art, abbuchungsart, buchungsdatum,
-				actual_terminplan, icon) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-			)
+			.prepare(`INSERT INTO posten (${spalten}) VALUES (${platzhalter})`)
 			.run(...werte);
 		postenId = Number(r.lastInsertRowid);
 	}
@@ -735,13 +749,22 @@ export function importiere(s: Sicherung, wer: PersonId) {
 		}
 		auftraege[id] = ergebnis.auftraege;
 	}
+	const vertraege = s.posten.map((p, i) => {
+		const ergebnis = pruefeVertrag((p as { vertrag?: unknown })?.vertrag);
+		if ('fehler' in ergebnis) {
+			throw new Error(`Die Sicherung enthält ungültige Vertragsangaben bei „${p?.name ?? `Posten ${i + 1}`}“: ${Object.values(ergebnis.fehler)[0]}`);
+		}
+		return ergebnis.vertrag;
+	});
 	inTransaktion(() => {
 		db().exec('DELETE FROM beteiligungen; DELETE FROM posten; DELETE FROM rueckstellungen;');
 		for (const p of s.personen) {
 			if (p.id === 'a' || p.id === 'b') schreibePerson({ ...ladePerson(p.id), ...p });
 		}
 		// Unbekannte Symbole verwerfen, der Posten zeigt dann wieder den Anfangsbuchstaben.
-		for (const p of s.posten) schreibePosten({ ...p, icon: istPostenIcon(p.icon) ? p.icon : null, beteiligungen: p.beteiligungen ?? [] });
+		s.posten.forEach((p, i) =>
+			schreibePosten({ ...p, icon: istPostenIcon(p.icon) ? p.icon : null, vertrag: vertraege[i], beteiligungen: p.beteiligungen ?? [] })
+		);
 		for (const id of ['a', 'b'] as const) {
 			schreibeRueckstellungen(id, (s.rueckstellungen ?? []).filter((r) => r.person === id).map(vervollstaendigeRueckstellung));
 		}
