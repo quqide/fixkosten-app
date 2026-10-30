@@ -3,6 +3,7 @@ import type { Aufteilungsmodell } from '#lib/rechnung/gemeinschaft.ts';
 import { standardAuftraege, type AuftragKonfig, type Baustein, type Kontenmodus } from '#lib/rechnung/aufstellung.ts';
 import type { Rundung } from '#lib/rechnung/rundung.ts';
 import type { Abgleich } from '#lib/rechnung/abgleich.ts';
+import { zielVon, type RueckstellungKonfig, type RueckstellungsArt } from '#lib/rechnung/rueckstellung.ts';
 import { db, type Besitzer, type PersonId } from './db.ts';
 
 export type Hell = 'auto' | 'light' | 'dark';
@@ -43,12 +44,14 @@ export interface PostenEintrag extends FixkostenPosten {
 	actualTerminplan?: string | null;
 }
 
-export interface RueckstellungEintrag {
+export interface RueckstellungEintrag extends RueckstellungKonfig {
 	id?: number;
 	person: PersonId;
-	name: string;
-	betragCent: number;
-	zielkonto: string | null;
+	/** Kategorie in Actual, deren Saldo der Stand ist. */
+	actualKategorie: string | null;
+	/** Von Hand eingetragener Stand, wenn keine Kategorie gewählt ist. */
+	standCent: number | null;
+	standDatum: string | null;
 }
 
 /** Was mit dem Geld einer Position vom Gemeinschaftskonto passiert. */
@@ -369,17 +372,60 @@ export function ladeRueckstellungen(person: PersonId): RueckstellungEintrag[] {
 		id: Number(z.id),
 		person,
 		name: z.name as string,
+		art: ((z.art as RueckstellungsArt | null) ?? 'fest'),
 		betragCent: Number(z.betrag_cent),
-		zielkonto: (z.zielkonto as string | null) ?? null
+		zielCent: z.ziel_cent == null ? null : Number(z.ziel_cent),
+		zielNettoFaktor: z.ziel_netto_faktor == null ? null : Number(z.ziel_netto_faktor),
+		faellig: (z.faellig as string | null) ?? null,
+		zielkonto: (z.zielkonto as string | null) ?? null,
+		wkn: (z.wkn as string | null) ?? null,
+		aktiv: z.aktiv == null ? true : Boolean(z.aktiv),
+		actualKategorie: (z.actual_kategorie as string | null) ?? null,
+		standCent: z.stand_cent == null ? null : Number(z.stand_cent),
+		standDatum: (z.stand_datum as string | null) ?? null
 	}));
+}
+
+/** Ältere Sicherungen kennen nur Name, Betrag und Zielkonto. */
+export function vervollstaendigeRueckstellung(r: Partial<RueckstellungEintrag> & Pick<RueckstellungEintrag, 'person' | 'name' | 'betragCent'>): RueckstellungEintrag {
+	return {
+		art: 'fest',
+		zielCent: null,
+		zielNettoFaktor: null,
+		faellig: null,
+		zielkonto: null,
+		wkn: null,
+		aktiv: true,
+		actualKategorie: null,
+		standCent: null,
+		standDatum: null,
+		...r
+	};
 }
 
 function schreibeRueckstellungen(person: PersonId, liste: RueckstellungEintrag[]) {
 	db().prepare('DELETE FROM rueckstellungen WHERE person = ?').run(person);
 	for (const r of liste) {
 		db()
-			.prepare('INSERT INTO rueckstellungen (person, name, betrag_cent, zielkonto) VALUES (?, ?, ?, ?)')
-			.run(person, r.name, r.betragCent, r.zielkonto);
+			.prepare(
+				`INSERT INTO rueckstellungen (person, name, art, betrag_cent, ziel_cent, ziel_netto_faktor, faellig, zielkonto, wkn, aktiv, actual_kategorie, stand_cent, stand_datum)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+			)
+			.run(
+				person,
+				r.name,
+				r.art,
+				r.betragCent,
+				r.zielCent,
+				r.zielNettoFaktor,
+				r.faellig,
+				r.zielkonto,
+				r.wkn,
+				r.aktiv ? 1 : 0,
+				r.actualKategorie,
+				r.standCent,
+				r.standDatum
+			);
 	}
 }
 
@@ -467,7 +513,11 @@ export function ladeAuftraege(person: PersonId): AuftragEintrag[] {
 	const zeilen = db().prepare('SELECT * FROM dauerauftraege WHERE person = ? ORDER BY sortierung, id').all(person) as Zeile[];
 	if (!zeilen.length && !db().prepare('SELECT 1 FROM merker WHERE schluessel = ?').get(`auftraege-${person}`)) {
 		const p = ladePerson(person);
-		schreibeAuftraege(person, standardAuftraege(p.modus, p.etfProzent, ladeRueckstellungen(person)));
+		schreibeAuftraege(person, standardAuftraege(
+				p.modus,
+				p.etfProzent,
+				ladeRueckstellungen(person).map((r) => ({ name: r.name, betragCent: r.betragCent, zielkonto: zielVon(r) }))
+			));
 		return ladeAuftraege(person);
 	}
 	return zeilen.map((z) => ({
@@ -598,7 +648,7 @@ export function importiere(s: Sicherung, wer: PersonId) {
 		}
 		for (const p of s.posten) schreibePosten({ ...p, beteiligungen: p.beteiligungen ?? [] });
 		for (const id of ['a', 'b'] as const) {
-			schreibeRueckstellungen(id, (s.rueckstellungen ?? []).filter((r) => r.person === id));
+			schreibeRueckstellungen(id, (s.rueckstellungen ?? []).filter((r) => r.person === id).map(vervollstaendigeRueckstellung));
 		}
 		if (s.gemeinschaft) {
 			const g = s.gemeinschaft as GemeinschaftEintrag & Record<string, unknown>;
