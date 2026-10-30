@@ -59,6 +59,8 @@ export interface Warnung {
 	stufe: 'warnung' | 'hinweis';
 	/** Der Terminplan, um den es geht, wenn es genau einer ist (bei „geloescht“ die am Posten gespeicherte ID). */
 	terminplanId: string | null;
+	/** Weitere betroffene Terminpläne, z. B. der erste Plan bei „duplikat“. */
+	weitereTerminplanIds?: string[];
 	/** Was nicht passt, in einem Satz. */
 	text: string;
 	/** Was in Actual (oder in der App) zu tun ist. */
@@ -309,6 +311,7 @@ export function pruefeTerminplaene(e: PruefungEingaben): Warnung[] {
 				art: 'duplikat',
 				stufe: 'hinweis',
 				terminplanId: t.id,
+				weitereTerminplanIds: [erster.id],
 				text: `„${t.name}“ und „${erster.name}“ sehen gleich aus.`,
 				tun: 'Doppelten Terminplan in Actual löschen.'
 			});
@@ -359,4 +362,15 @@ export function schlageRolleVor(t: Terminplan, kontoId: string | null, dauerauft
 		return { typ: 'dauerauftrag', name: passend.name };
 	}
 	return t.umbuchung ? { typ: 'ignorieren' } : { typ: 'fixkosten' };
+}
+
+/**
+ * Hängt an jeden mit Actual verknüpften Posten die Meldungen zu seinem Terminplan
+ * (terminplanId oder weitereTerminplanIds). Posten ohne Verknüpfung bekommen keine.
+ */
+export function mitMeldungen<P extends { actualTerminplan?: string | null }>(posten: P[], meldungen: Warnung[]): (P & { meldungen: Warnung[] })[] {
+	return posten.map((p) => ({
+		...p,
+		meldungen: p.actualTerminplan ? meldungen.filter((w) => w.terminplanId === p.actualTerminplan || !!w.weitereTerminplanIds?.includes(p.actualTerminplan!)) : []
+	}));
 }

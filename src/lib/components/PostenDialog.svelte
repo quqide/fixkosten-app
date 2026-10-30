@@ -8,9 +8,10 @@
 	import { heute } from '#lib/rechnung/datum.ts';
 	import Icon from './Icon.svelte';
 	import PostenSymbol from './PostenSymbol.svelte';
+	import type { Warnung } from '#lib/rechnung/terminplan.ts';
 	import { POSTEN_ICONS, schlageIconVor, type PostenIcon } from '#lib/postenIcons.ts';
 
-	type Posten = FixkostenPosten & { id?: number; actualTerminplan?: string | null };
+	type Posten = FixkostenPosten & { id?: number; actualTerminplan?: string | null; meldungen?: Warnung[] };
 
 	let { posten = $bindable(), neuTitel = 'Neue Fixkosten' }: { posten: Posten | null | undefined; neuTitel?: string } = $props();
 
@@ -71,6 +72,18 @@
 			</div>
 			<div class="sheet-body">
 				{#if posten.id != null}<input type="hidden" name="id" value={posten.id} />{/if}
+				{#if posten.meldungen?.length}
+					<div class="card meldungen" aria-label="Meldungen aus Actual">
+						<ul class="rows">
+							{#each posten.meldungen as m, i (i)}
+								<li><div class="row">
+									<span class="stufe {m.stufe}" aria-label={m.stufe === 'warnung' ? 'Warnung' : 'Hinweis'}>{m.stufe === 'warnung' ? '!' : 'i'}</span>
+									<span class="main"><span class="title">{m.text}</span><span class="detail">{m.tun}</span></span>
+								</div></li>
+							{/each}
+						</ul>
+					</div>
+				{/if}
 				{#if ausActual}<p class="note aus-actual">Name, Betrag, Rhythmus und Termin kommen aus dem Terminplan in Actual. Ändere sie dort, die App übernimmt sie beim nächsten Abruf.</p>{/if}
 				{#if fehler.allgemein}<p class="note" role="alert" style="color:var(--warm)">{fehler.allgemein}</p>{/if}
 				<div class="card">
@@ -190,6 +203,11 @@
 
 <style>
 	.aus-actual { margin: 0 4px 12px; }
+	.meldungen { margin-bottom: 12px; }
+	.stufe { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; flex: none; }
+	.stufe.warnung { background: var(--warm-soft); color: var(--warm); }
+	.stufe.hinweis { background: var(--calm-soft); color: var(--calm); }
+	.meldungen .title { font-weight: 600; }
 	input[readonly] { color: var(--secondary) !important; }
 	.bet { border: 0; margin: 0; padding: 12px 0; display: grid; gap: 8px; border-bottom: 1px solid var(--separator); }
 	.bet input { font-size: 16px; }
