@@ -6,6 +6,7 @@
 	import { betragFeld, datumKurz, datumLang, eur, eurGanz, inTagen, initiale, zeitpunkt } from '#lib/format.ts';
 	import type { SubmitFunction } from '$app/forms';
 	import { mitRueckmeldung, zeigeToast } from '#lib/toast.svelte.ts';
+	import { beschreibeAuftrag } from '#lib/rechnung/aufstellung.ts';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
@@ -66,11 +67,10 @@
 	const spitze = $derived(data.verlauf.length ? data.verlauf.reduce((a, b) => (b.sollCent > a.sollCent ? b : a)) : null);
 	const summeDauerauftraege = $derived(data.aufstellung.dauerauftraege.reduce((s, d) => s + d.betragCent, 0));
 	const artKlasse = (art: string | null) => `a${art?.slice(0, 2) ?? '50'}`;
-	const detailZu = (name: string) =>
-		name === 'ETF-Sparplan' ? `${p.etfProzent.toLocaleString('de-DE')} % vom Netto`
-		: name === 'Gemeinschaftskonto' ? 'dein Anteil'
-		: name === 'Spaßkonto' ? 'zur freien Verfügung'
-		: name === 'Fixkosten' ? 'Rücklage für deine Fixkosten' : '';
+	const detailZu = (i: number) => {
+		const a = data.auftraege[i];
+		return a ? `${a.zielkonto ? `aufs ${a.zielkonto}: ` : ''}${beschreibeAuftrag(a)}` : '';
+	};
 </script>
 
 <svelte:head><title>Übersicht · Fixkosten</title></svelte:head>
@@ -193,10 +193,10 @@
 		{/if}
 		<div class="card" style="margin-top:14px">
 			<ul class="rows">
-				{#each data.aufstellung.dauerauftraege as d (d.name)}
+				{#each data.aufstellung.dauerauftraege as d, i (i)}
 					<li><div class="row">
 						<span class="icon {d.name === 'Spaßkonto' ? 'a30' : d.name === 'Gemeinschaftskonto' || d.name === 'Fixkosten' ? 'a50' : 'a20'}">{initiale(d.name)}</span>
-						<span class="main"><span class="title">{d.name}</span><span class="detail">{d.zielkonto && !['Gemeinschaftskonto', 'Spaßkonto', 'Fixkosten-Konto', 'Depot'].includes(d.zielkonto) ? `aufs ${d.zielkonto}` : detailZu(d.name)}</span></span>
+						<span class="main"><span class="title">{d.name}</span><span class="detail">{detailZu(i)}</span></span>
 						<span class="value">{eur(d.betragCent)}</span>
 					</div></li>
 				{/each}

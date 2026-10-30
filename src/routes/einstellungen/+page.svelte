@@ -3,6 +3,7 @@
 	import Icon from '#lib/components/Icon.svelte';
 	import { betragFeld, eur, intervallText, zeitpunkt } from '#lib/format.ts';
 	import { THEMES } from '#lib/themes.ts';
+	import { SCHRITTE } from '#lib/rechnung/rundung.ts';
 	import { mitRueckmeldung, rueckgaengig, toast } from '#lib/toast.svelte.ts';
 	import type { PageProps } from './$types';
 
@@ -18,6 +19,35 @@
 	});
 
 	let importBestaetigen = $state(false);
+
+	const BAUSTEINE = [
+		{ typ: 'prozent', name: 'Prozent vom Netto' },
+		{ typ: 'fest', name: 'Fester Betrag' },
+		{ typ: 'gemeinschaft', name: 'Anteil Gemeinschaftskonto' },
+		{ typ: 'ruecklagen', name: 'Rücklagen mit Ziel' },
+		{ typ: 'fixkosten', name: 'Rate für Fixkosten' },
+		{ typ: 'rest', name: 'Was übrig bleibt' }
+	] as const;
+	type BausteinEntwurf = { typ: (typeof BAUSTEINE)[number]['typ']; wert: string };
+	type AuftragEntwurf = { schluessel: number; name: string; zielkonto: string; bausteine: BausteinEntwurf[]; rundung: { schritt: number; richtung: 'auf' | 'ab' | 'kaufm' } };
+	let auftraege = $state<AuftragEntwurf[]>([]);
+	let schluessel = 0;
+	$effect(() => {
+		auftraege = data.auftraege.map((a) => ({
+			schluessel: schluessel++,
+			name: a.name,
+			zielkonto: a.zielkonto,
+			bausteine: a.bausteine.map((b) => ({
+				typ: b.typ,
+				wert: b.typ === 'fest' ? betragFeld(b.betragCent) : b.typ === 'prozent' ? b.prozent.toLocaleString('de-DE') : b.typ === 'ruecklagen' ? b.ziel : ''
+			})),
+			rundung: a.rundung ?? (a.bausteine.some((b) => b.typ === 'rest') ? { schritt: 100, richtung: 'ab' } : { schritt: 1, richtung: 'kaufm' })
+		}));
+	});
+	function neuerAuftrag() {
+		auftraege.push({ schluessel: schluessel++, name: '', zielkonto: '', bausteine: [{ typ: 'fest', wert: '' }], rundung: { schritt: 1, richtung: 'kaufm' } });
+	}
+	const ziele = $derived([...new Set([...data.rueckstellungen.map((r) => r.zielkonto ?? ''), ...data.auftraege.map((a) => a.zielkonto)].filter(Boolean))]);
 
 	const modelle = [
 		{ wert: 1, titel: 'Spaßkonto mit festem Betrag', text: 'Fixkosten gehen direkt vom Gehaltskonto ab. Die App rechnet aus, wie viel aufs Spaßkonto darf.' },
@@ -69,7 +99,6 @@
 		{#each [
 			{ id: 'name', label: 'Dein Name', wert: p.name, modus: 'text', hilfe: '' },
 			{ id: 'netto', label: 'Nettogehalt pro Monat', wert: betragFeld(p.nettoCent), modus: 'decimal', hilfe: 'In Euro, zum Beispiel 3450' },
-			{ id: 'etf', label: 'ETF-Sparquote in Prozent', wert: p.etfProzent.toLocaleString('de-DE'), modus: 'decimal', hilfe: 'Anteil vom Netto, der jeden Monat ins Depot geht.' },
 			{ id: 'tag', label: 'Tag der Daueraufträge', wert: String(p.ueberweisungstag), modus: 'numeric', hilfe: 'An diesem Tag gehen alle Überweisungen vom Gehaltskonto raus.' },
 			{ id: 'puffer', label: 'Puffer, bevor die App „übrig“ meldet', wert: betragFeld(p.pufferCent), modus: 'decimal', hilfe: 'Bis zu diesem Betrag über dem Soll gilt alles als im Plan.' }
 		] as feld (feld.id)}
@@ -83,6 +112,58 @@
 		{/each}
 		<div class="field"><button class="primary" type="submit">Speichern</button></div>
 	</div>
+</form>
+
+<form method="POST" action="?/auftraege" use:enhance={mitRueckmeldung()} class="section">
+	<div class="section-head"><h2>Daueraufträge</h2><span class="aside">am {p.ueberweisungstag}. vom Gehaltskonto</span></div>
+	<input type="hidden" name="auftraege" value={JSON.stringify(auftraege)} />
+	<div class="card">
+		{#each auftraege as a, i (a.schluessel)}
+			<fieldset class="field auftrag">
+				<legend class="label">Dauerauftrag {i + 1}</legend>
+				<div class="inline-fields">
+					<input bind:value={a.name} placeholder="Name, z. B. ETF Invest" aria-label="Name" />
+					<input bind:value={a.zielkonto} placeholder="Auf welches Konto?" aria-label="Zielkonto" list="ziele" />
+				</div>
+				<span class="help">Setzt sich zusammen aus:</span>
+				{#each a.bausteine as b, j (j)}
+					<div class="baustein">
+						<select bind:value={b.typ} aria-label="Baustein">
+							{#each BAUSTEINE as t (t.typ)}<option value={t.typ}>{t.name}</option>{/each}
+						</select>
+						{#if b.typ === 'fest'}<input bind:value={b.wert} inputmode="decimal" placeholder="Betrag" aria-label="Betrag" />
+						{:else if b.typ === 'prozent'}<input bind:value={b.wert} inputmode="decimal" placeholder="Prozent" aria-label="Prozent vom Netto" />
+						{:else if b.typ === 'ruecklagen'}<input bind:value={b.wert} placeholder="Ziel der Rücklagen" aria-label="Ziel der Rücklagen" list="ziele" />{/if}
+						{#if a.bausteine.length > 1}<button type="button" class="textlink entfernen" aria-label="Baustein entfernen" onclick={() => a.bausteine.splice(j, 1)}>Entfernen</button>{/if}
+					</div>
+				{/each}
+				<button type="button" class="textlink plus" onclick={() => a.bausteine.push({ typ: 'fest', wert: '' })}>+ Baustein</button>
+				<div class="baustein">
+					<span class="help">Rundung</span>
+					<select bind:value={a.rundung.schritt} aria-label="Rundungsschritt">
+						{#each SCHRITTE as sch (sch)}<option value={sch}>{sch === 1 ? 'centgenau' : `auf ${(sch / 100).toLocaleString('de-DE')} €`}</option>{/each}
+					</select>
+					{#if a.rundung.schritt > 1}
+						<select bind:value={a.rundung.richtung} aria-label="Rundungsrichtung">
+							<option value="auf">aufrunden</option><option value="ab">abrunden</option><option value="kaufm">kaufmännisch</option>
+						</select>
+					{/if}
+				</div>
+				{#if fehlerIn('auftraege')[`a_${i}`]}<span class="error">{fehlerIn('auftraege')[`a_${i}`]}</span>{/if}
+				<div class="aktionen">
+					{#if i > 0}<button type="button" class="textlink" onclick={() => auftraege.splice(i - 1, 0, ...auftraege.splice(i, 1))}>Nach oben</button>{/if}
+					<button type="button" class="textlink entfernen" onclick={() => auftraege.splice(i, 1)}>Dauerauftrag entfernen</button>
+				</div>
+			</fieldset>
+		{/each}
+		{#if fehlerIn('auftraege').allgemein}<div class="field"><span class="error">{fehlerIn('auftraege').allgemein}</span></div>{/if}
+		<div class="field buttons">
+			<button type="button" class="secondary" onclick={neuerAuftrag}><Icon name="plus" size={18} />Dauerauftrag hinzufügen</button>
+			<button class="primary" type="submit">Speichern</button>
+		</div>
+	</div>
+	<datalist id="ziele">{#each ziele as z (z)}<option value={z}></option>{/each}</datalist>
+	<p class="note">Die Beträge rechnet die App jeden Monat neu aus. „Was übrig bleibt“ gleicht alle Rundungen aus.</p>
 </form>
 
 <form method="POST" action="?/rueckstellungen" use:enhance={mitRueckmeldung()} class="section">
@@ -286,6 +367,13 @@ ACTUAL_{p.id.toUpperCase()}_SYNC_ID=Sync-ID aus Actual (Einstellungen → Erweit
 	.entfernen { justify-self: start; color: var(--warm); }
 	.buttons { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; }
 	.help-text { margin: 0; color: var(--secondary); }
+	.auftrag { border: 0; margin: 0; }
+	.auftrag legend { padding: 0; margin-bottom: 6px; }
+	.baustein { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+	.baustein select, .baustein input { flex: 1 1 140px; font-size: 15px; min-height: 44px; }
+	.baustein .help { flex: 0 0 auto; }
+	.plus { justify-self: start; }
+	.aktionen { display: flex; gap: 16px; }
 	.abruf .secondary { justify-self: start; }
 	.stufe { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; flex: none; }
 	.stufe.warnung { background: var(--warm-soft); color: var(--warm); }

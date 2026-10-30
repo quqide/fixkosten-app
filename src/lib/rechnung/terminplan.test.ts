@@ -158,6 +158,45 @@ describe('Prüfung der Einrichtung in Actual', () => {
 	});
 });
 
+describe('Aufteilung des Gemeinschafts-Dauerauftrags', () => {
+	const soll = {
+		auftrag: 'Gemeinschaftskonto',
+		teile: [
+			{ name: 'Miete', kategorieId: 'miete', betragCent: 26128 },
+			{ name: 'Alltag', kategorieId: 'alltag', betragCent: 37740 },
+			{ name: 'Rücklage', kategorieId: null, betragCent: 5806 }
+		]
+	};
+	const rolle: Rolle = { typ: 'dauerauftrag', name: 'Gemeinschaftskonto' };
+	const mit = (aufteilung: Terminplan['aufteilung']) => {
+		const e = basis([plan({ id: 'gem', betragCent: 69674, aufteilung })], [['gem', rolle]]);
+		e.dauerauftraege = [{ name: 'Gemeinschaftskonto', zielkonto: '', betragCent: 69674 }];
+		e.gemeinschaft = soll;
+		e.kategorieName = (id) => ({ miete: 'Miete', alltag: 'Lebensmittel', urlaub: 'Urlaub' })[id] ?? id;
+		return texte(e);
+	};
+
+	it('passende Aufteilung ergibt keine Warnung', () => {
+		expect(mit([{ kategorieId: 'miete', betragCent: 26128 }, { kategorieId: 'alltag', betragCent: 37740 }])).toEqual([]);
+	});
+
+	it('meldet fehlende Aufteilung mit den Sollwerten', () => {
+		const t = mit(null);
+		expect(t).toHaveLength(1);
+		expect(t[0]).toBe('hinweis: „gem“ ist nicht nach Kategorien aufgeteilt.');
+	});
+
+	it('meldet abweichende und fremde Teile', () => {
+		const t = mit([
+			{ kategorieId: 'miete', betragCent: 27000 },
+			{ kategorieId: 'alltag', betragCent: 37740 },
+			{ kategorieId: 'urlaub', betragCent: 1000 }
+		]);
+		expect(t).toContain('warnung: Gemeinschaftskonto/Miete: In Actual 270,00 €, berechnet 261,28 €.');
+		expect(t).toContain('hinweis: „gem“ hat einen Teil für Urlaub, den keine Position des Gemeinschaftskontos nutzt.');
+	});
+});
+
 describe('Vorschlag für neue Terminpläne', () => {
 	const auftraege = [
 		{ name: 'Spaßkonto', zielkonto: 'Spaßkonto', betragCent: 125200 },

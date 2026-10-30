@@ -23,6 +23,8 @@ export interface Terminplan {
 	kategorieId: string | null;
 	/** Letzte Buchung, die Actual mit diesem Terminplan verknüpft hat. */
 	letzteBuchung: { datum: IsoDatum; betragCent: number } | null;
+	/** Aufteilung (Split) des Terminplans nach Kategorien, falls vorhanden. */
+	aufteilung?: { kategorieId: string | null; betragCent: number }[] | null;
 }
 
 export type Rolle =
@@ -80,6 +82,9 @@ export interface PruefungEingaben {
 	/** Posten der App, die mit einem Terminplan verknüpft sind. */
 	verknuepft: { name: string; terminplanId: string }[];
 	heute: IsoDatum;
+	/** Soll-Aufteilung des Dauerauftrags aufs Gemeinschaftskonto: eigener Anteil je Position. */
+	gemeinschaft?: { auftrag: string; teile: { name: string; kategorieId: string | null; betragCent: number }[] } | null;
+	kategorieName?: (id: string) => string;
 }
 
 const ABWEICHUNG_CENT = 100;
@@ -201,6 +206,47 @@ export function pruefeTerminplaene(e: PruefungEingaben): Warnung[] {
 					text: `${rolle.name}: In Actual stehen ${eur(t.betragCent)}, berechnet sind ${eur(auftrag.betragCent)}.`,
 					tun: `Betrag im Terminplan ${name} auf ${eur(auftrag.betragCent)} ändern.`
 				});
+			}
+		}
+	}
+
+	if (e.gemeinschaft && e.gemeinschaft.teile.some((t) => t.kategorieId)) {
+		const soll = e.gemeinschaft;
+		const plan = e.terminplaene.find((t) => {
+			const r = e.zuordnung.get(t.id);
+			return !t.beendet && r?.typ === 'dauerauftrag' && r.name === soll.auftrag;
+		});
+		const kat = (id: string | null) => (id ? (e.kategorieName?.(id) ?? id) : 'ohne Kategorie');
+		if (plan && !plan.aufteilung?.length) {
+			w.push({
+				stufe: 'hinweis',
+				terminplanId: plan.id,
+				text: `„${plan.name}“ ist nicht nach Kategorien aufgeteilt.`,
+				tun: `Im Terminplan aufteilen: ${soll.teile.filter((t) => t.kategorieId).map((t) => `${kat(t.kategorieId)} ${eur(t.betragCent)}`).join(', ')}.`
+			});
+		} else if (plan?.aufteilung) {
+			for (const t of soll.teile) {
+				if (!t.kategorieId) continue;
+				const ist = plan.aufteilung.filter((a) => a.kategorieId === t.kategorieId).reduce((s, a) => s + a.betragCent, 0);
+				if (ist !== t.betragCent) {
+					w.push({
+						stufe: 'warnung',
+						terminplanId: plan.id,
+						text: `${soll.auftrag}/${t.name}: In Actual ${eur(ist)}, berechnet ${eur(t.betragCent)}.`,
+						tun: `Im Terminplan „${plan.name}“ den Teil für ${kat(t.kategorieId)} auf ${eur(t.betragCent)} setzen.`
+					});
+				}
+			}
+			const erwartet = new Set(soll.teile.map((t) => t.kategorieId).filter(Boolean));
+			for (const a of plan.aufteilung) {
+				if (!erwartet.has(a.kategorieId)) {
+					w.push({
+						stufe: 'hinweis',
+						terminplanId: plan.id,
+						text: `„${plan.name}“ hat einen Teil für ${kat(a.kategorieId)}, den keine Position des Gemeinschaftskontos nutzt.`,
+						tun: 'Kategorie einer Position zuordnen oder den Teil im Terminplan entfernen.'
+					});
+				}
 			}
 		}
 	}

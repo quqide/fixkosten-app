@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { berechneGemeinschaft, type Gemeinschaftskonto } from './gemeinschaft';
 
+const positionen = (alltagCent = 65000): Gemeinschaftskonto['positionen'] => [
+	{ name: 'Miete', art: 'fest', betragCent: 45000 },
+	{ name: 'Lebensmittel und Alltag', art: 'fest', betragCent: alltagCent },
+	{ name: 'Gemeinsame Rücklage', art: 'fest', betragCent: 10000 },
+	{ name: 'Gemeinsame Fixkosten', art: 'fixkosten', betragCent: 0 }
+];
 const konto: Gemeinschaftskonto = {
-	mieteCent: 45000,
-	alltagCent: 65000,
-	ruecklageCent: 10000,
+	positionen: positionen(),
 	fixkosten: [
 		{ name: 'Internet', intervallMonate: 1, betragCent: 3999, buchungsdatum: '2026-09-01' },
 		{ name: 'Rundfunkbeitrag', intervallMonate: 3, betragCent: 5508, buchungsdatum: '2026-08-15' }
@@ -33,7 +37,7 @@ describe('Gemeinschaftskonto', () => {
 	});
 
 	it('Modell A: Rundung geht für beide nach oben', () => {
-		const r = berechneGemeinschaft({ ...konto, alltagCent: 65010 }, personen, '2026-09-28');
+		const r = berechneGemeinschaft({ ...konto, positionen: positionen(65010) }, personen, '2026-09-28');
 		// 1.259,10 € → 730,06 € und 529,04 €
 		expect(r.anteile.map((a) => a.betragCent)).toEqual([73100, 53000]);
 	});
@@ -52,5 +56,24 @@ describe('Gemeinschaftskonto', () => {
 			{ name: 'Wenig', nettoCent: 100000 }
 		], '2026-09-28');
 		expect(r.anteile.map((a) => a.betragCent)).toEqual([r.gesamtCent, 0]);
+	});
+
+	it('verteilt den eigenen Anteil centgenau auf die Positionen', () => {
+		const r = berechneGemeinschaft(konto, personen, '2026-09-28');
+		const teile = r.anteile[0].positionen;
+		expect(teile.map((t) => t.name)).toEqual(['Miete', 'Lebensmittel und Alltag', 'Gemeinsame Rücklage', 'Gemeinsame Fixkosten']);
+		expect(teile.reduce((s, t) => s + t.betragCent, 0)).toBe(73100);
+		// 45.000 × 73.100 / 125.900 = 26.127,9 → 26.128 Cent
+		expect(teile[0].betragCent).toBe(26128);
+	});
+
+	it('Rundung der Anteile ist einstellbar', () => {
+		const r = berechneGemeinschaft({ ...konto, rundung: { schritt: 1000, richtung: 'auf' } }, personen, '2026-09-28');
+		expect(r.anteile.map((a) => a.betragCent)).toEqual([74000, 53000]);
+	});
+
+	it('ohne Fixkosten-Position zählen die gemeinsamen Fixkosten nicht mit', () => {
+		const r = berechneGemeinschaft({ ...konto, positionen: positionen().slice(0, 3) }, personen, '2026-09-28');
+		expect(r.gesamtCent).toBe(120000);
 	});
 });
