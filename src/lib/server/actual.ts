@@ -94,6 +94,8 @@ export interface ActualDaten {
 	kategorien: ActualKategorie[];
 	/** Letzte Gutschrift je Kategorie im gewählten Konto, für die Prüfung der Gehaltskategorie. */
 	letzteEinnahmen: Record<string, string>;
+	/** Saldo je Kategorie im laufenden Monat, für den Stand der Rückstellungen. */
+	kategorieSalden: Record<string, number>;
 }
 
 type RohTerminplan = Awaited<ReturnType<Api['getSchedules']>>[number];
@@ -140,6 +142,18 @@ export function ladeAbgleich(
 				.map((k) => ({ id: k.id, name: k.name, gruppe: g.name, einnahme: Boolean(g.is_income) }))
 		);
 
+		const kategorieSalden: Record<string, number> = {};
+		try {
+			const monat = await api.getBudgetMonth(stichtag.slice(0, 7));
+			for (const g of monat.categoryGroups) {
+				for (const k of g.categories ?? []) {
+					if (typeof k.id === 'string' && typeof k.balance === 'number') kategorieSalden[k.id] = k.balance;
+				}
+			}
+		} catch {
+			// Monat noch nicht im Budget angelegt: dann eben ohne Salden.
+		}
+
 		const saldoCent = await api.getAccountBalance(kontoId, new Date(`${stichtag}T12:00:00`));
 		const rohTerminplaene = await api.getSchedules();
 
@@ -170,6 +184,28 @@ export function ladeAbgleich(
 					(a) => a.op === 'set' && a.field === 'category' && !(a.options as { splitIndex?: number } | undefined)?.splitIndex
 				);
 				const letzte = letzteJePlan.get(t.id);
+				// Aufteilung: je Teil (splitIndex ≥ 1) ein Betrag und eine Kategorie.
+				type Aktion = { op: string; field?: string; value?: unknown; options?: { splitIndex?: number; method?: string } };
+				const teile = new Map<number, { kategorieId: string | null; betragCent: number; methode: string }>();
+				for (const a of (regel?.actions ?? []) as Aktion[]) {
+					const index = a.options?.splitIndex;
+					if (!index) continue;
+					const teil = teile.get(index) ?? { kategorieId: null, betragCent: 0, methode: 'fixed-amount' };
+					if (a.op === 'set-split-amount') {
+						teil.methode = a.options?.method ?? 'fixed-amount';
+						const wert = Number(a.value) || 0;
+						// Prozent werden in Actual als Zahl wie 37,5 gespeichert.
+						teil.betragCent = teil.methode === 'fixed-percent' ? Math.round((Math.abs(cent) * wert) / 100) : Math.abs(wert);
+					}
+					if (a.op === 'set' && a.field === 'category') teil.kategorieId = (a.value as string) ?? null;
+					teile.set(index, teil);
+				}
+				// „Rest“-Teile bekommen, was nach den anderen übrig bleibt.
+				const rest = [...teile.values()].filter((t) => t.methode === 'remainder');
+				if (rest.length) {
+					const vergeben = [...teile.values()].filter((t) => t.methode !== 'remainder').reduce((s, t) => s + t.betragCent, 0);
+					rest[0].betragCent = Math.max(0, Math.abs(cent) - vergeben);
+				}
 				const empfaenger = t.payee ? (payeeName.get(t.payee) ?? null) : null;
 				return {
 					id: t.id,
@@ -184,7 +220,10 @@ export function ladeAbgleich(
 					naechsterTermin: t.next_date ?? null,
 					beendet: !!t.completed,
 					kategorieId: (kategorie?.value as string | undefined) ?? null,
-					letzteBuchung: letzte ? { datum: letzte.date, betragCent: -letzte.amount } : null
+					letzteBuchung: letzte ? { datum: letzte.date, betragCent: -letzte.amount } : null,
+					aufteilung: teile.size
+						? [...teile.entries()].sort(([x], [y]) => x - y).map(([, v]) => ({ kategorieId: v.kategorieId, betragCent: v.betragCent }))
+						: null
 				};
 			});
 
@@ -204,6 +243,6 @@ export function ladeAbgleich(
 			if (t.amount > 0 && t.category && (letzteEinnahmen[t.category] ?? '') < t.date) letzteEinnahmen[t.category] = t.date;
 		}
 
-		return { saldoCent, buchungen, terminplaene, kategorien, letzteEinnahmen };
+		return { saldoCent, buchungen, terminplaene, kategorien, letzteEinnahmen, kategorieSalden };
 	});
 }

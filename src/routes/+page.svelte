@@ -1,17 +1,20 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import Icon from '#lib/components/Icon.svelte';
+	import PostenSymbol from '#lib/components/PostenSymbol.svelte';
 	import Ring from '#lib/components/Ring.svelte';
 	import Verlauf from '#lib/components/Verlauf.svelte';
-	import { betragFeld, datumKurz, datumLang, eur, eurGanz, inTagen, initiale, zeitpunkt } from '#lib/format.ts';
+	import { betragFeld, datumKurz, datumLang, eur, eurGanz, inTagen, zeitpunkt } from '#lib/format.ts';
 	import type { SubmitFunction } from '$app/forms';
 	import { mitRueckmeldung, zeigeToast } from '#lib/toast.svelte.ts';
+	import { beschreibeAuftrag } from '#lib/rechnung/aufstellung.ts';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
 
 	let kontostandOffen = $state(false);
 	const p = $derived(data.person);
+	const iconVon = $derived(new Map(data.posten.map((x) => [x.name, x.icon])));
 	const konto = $derived(p.modus === 1 ? 'Gehaltskonto' : 'Fixkosten-Konto');
 	const anteil = $derived(data.gemeinschaft.anteil[p.id]);
 	const v = $derived(data.vergleich);
@@ -66,11 +69,10 @@
 	const spitze = $derived(data.verlauf.length ? data.verlauf.reduce((a, b) => (b.sollCent > a.sollCent ? b : a)) : null);
 	const summeDauerauftraege = $derived(data.aufstellung.dauerauftraege.reduce((s, d) => s + d.betragCent, 0));
 	const artKlasse = (art: string | null) => `a${art?.slice(0, 2) ?? '50'}`;
-	const detailZu = (name: string) =>
-		name === 'ETF-Sparplan' ? `${p.etfProzent.toLocaleString('de-DE')} % vom Netto`
-		: name === 'Gemeinschaftskonto' ? 'dein Anteil'
-		: name === 'Spaßkonto' ? 'zur freien Verfügung'
-		: name === 'Fixkosten' ? 'Rücklage für deine Fixkosten' : '';
+	const detailZu = (i: number) => {
+		const a = data.auftraege[i];
+		return a ? `${a.zielkonto ? `aufs ${a.zielkonto}: ` : ''}${beschreibeAuftrag(a)}` : '';
+	};
 </script>
 
 <svelte:head><title>Übersicht · Fixkosten</title></svelte:head>
@@ -193,10 +195,10 @@
 		{/if}
 		<div class="card" style="margin-top:14px">
 			<ul class="rows">
-				{#each data.aufstellung.dauerauftraege as d (d.name)}
+				{#each data.aufstellung.dauerauftraege as d, i (i)}
 					<li><div class="row">
-						<span class="icon {d.name === 'Spaßkonto' ? 'a30' : d.name === 'Gemeinschaftskonto' || d.name === 'Fixkosten' ? 'a50' : 'a20'}">{initiale(d.name)}</span>
-						<span class="main"><span class="title">{d.name}</span><span class="detail">{d.zielkonto && !['Gemeinschaftskonto', 'Spaßkonto', 'Fixkosten-Konto', 'Depot'].includes(d.zielkonto) ? `aufs ${d.zielkonto}` : detailZu(d.name)}</span></span>
+						<PostenSymbol name={d.name} klasse={d.name === 'Spaßkonto' ? 'a30' : d.name === 'Gemeinschaftskonto' || d.name === 'Fixkosten' ? 'a50' : 'a20'} />
+						<span class="main"><span class="title">{d.name}</span><span class="detail">{detailZu(i)}</span></span>
 						<span class="value">{eur(d.betragCent)}</span>
 					</div></li>
 				{/each}
@@ -216,7 +218,7 @@
 			<div class="card"><ul class="rows">
 				{#each data.naechste as z (z.name)}
 					<li><div class="row">
-						<span class="icon {artKlasse(z.art)}">{initiale(z.name)}</span>
+						<PostenSymbol name={z.name} icon={iconVon.get(z.name)} klasse={artKlasse(z.art)} />
 						<span class="main"><span class="title">{z.name}</span><span class="detail">{datumKurz(z.naechsteBuchung!)}, {inTagen(z.naechsteBuchung!, data.stichtag)}</span></span>
 						<span class="value">{eur(z.betragCent)}</span>
 					</div></li>

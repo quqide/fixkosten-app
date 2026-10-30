@@ -60,6 +60,29 @@ CREATE TABLE IF NOT EXISTS aenderungen (
 	text TEXT NOT NULL,
 	rueckgaengig TEXT
 );
+CREATE TABLE IF NOT EXISTS gemeinschaft_positionen (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	name TEXT NOT NULL,
+	art TEXT NOT NULL CHECK (art IN ('fest', 'fixkosten')),
+	betrag_cent INTEGER NOT NULL DEFAULT 0,
+	ausgang TEXT,
+	kategorie_a TEXT,
+	kategorie_b TEXT,
+	sortierung INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS dauerauftraege (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	person TEXT NOT NULL CHECK (person IN ('a', 'b')),
+	name TEXT NOT NULL,
+	zielkonto TEXT NOT NULL DEFAULT '',
+	bausteine TEXT NOT NULL,
+	rundung TEXT,
+	sortierung INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS merker (
+	schluessel TEXT PRIMARY KEY,
+	wert TEXT
+);
 CREATE TABLE IF NOT EXISTS actual_stand (
 	person TEXT PRIMARY KEY CHECK (person IN ('a', 'b')),
 	zeit TEXT NOT NULL,
@@ -81,6 +104,7 @@ export function oeffneDatenbank(pfad: string): DatabaseSync {
 	db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
 	db.exec(SCHEMA);
 	ergaenzeSpalten(db);
+	legePositionenAn(db);
 	return db;
 }
 
@@ -91,7 +115,18 @@ const NEUE_SPALTEN: [tabelle: string, spalte: string, definition: string][] = [
 	['personen', 'actual_konto_id', 'TEXT'],
 	['personen', 'actual_konto_name', 'TEXT'],
 	['personen', 'actual_gehalt_kategorie', 'TEXT'],
-	['posten', 'actual_terminplan', 'TEXT']
+	['posten', 'actual_terminplan', 'TEXT'],
+	['gemeinschaft', 'rundung', 'TEXT'],
+	['rueckstellungen', 'art', "TEXT NOT NULL DEFAULT 'fest'"],
+	['rueckstellungen', 'ziel_cent', 'INTEGER'],
+	['rueckstellungen', 'ziel_netto_faktor', 'REAL'],
+	['rueckstellungen', 'faellig', 'TEXT'],
+	['rueckstellungen', 'wkn', 'TEXT'],
+	['rueckstellungen', 'aktiv', 'INTEGER NOT NULL DEFAULT 1'],
+	['rueckstellungen', 'actual_kategorie', 'TEXT'],
+	['rueckstellungen', 'stand_cent', 'INTEGER'],
+	['rueckstellungen', 'stand_datum', 'TEXT'],
+	['posten', 'icon', 'TEXT']
 ];
 
 function ergaenzeSpalten(db: DatabaseSync) {
@@ -101,6 +136,22 @@ function ergaenzeSpalten(db: DatabaseSync) {
 		);
 		if (!vorhanden) db.exec(`ALTER TABLE ${tabelle} ADD COLUMN ${spalte} ${definition}`);
 	}
+}
+
+/** Einmalig: aus Miete, Alltag und Rücklage der ersten Version frei bearbeitbare Positionen machen. */
+function legePositionenAn(db: DatabaseSync) {
+	if (db.prepare("SELECT 1 FROM merker WHERE schluessel = 'positionen'").get()) return;
+	const g = db.prepare('SELECT * FROM gemeinschaft WHERE id = 1').get() as Record<string, number>;
+	const einf = db.prepare(
+		'INSERT INTO gemeinschaft_positionen (name, art, betrag_cent, ausgang, sortierung) VALUES (?, ?, ?, ?, ?)'
+	);
+	if (!(db.prepare('SELECT COUNT(*) AS n FROM gemeinschaft_positionen').get() as { n: number }).n) {
+		einf.run('Miete', 'fest', g.miete_cent ?? 0, JSON.stringify({ art: 'ueberweisung', ziel: 'Vermieter', tag: 1 }), 0);
+		einf.run('Lebensmittel und Alltag', 'fest', g.alltag_cent ?? 0, null, 1);
+		einf.run('Gemeinsame Rücklage', 'fest', g.ruecklage_cent ?? 0, JSON.stringify({ art: 'umbuchung', ziel: 'Gemeinschaftstagesgeld', tag: null }), 2);
+		einf.run('Gemeinsame Fixkosten', 'fixkosten', 0, null, 3);
+	}
+	db.prepare("INSERT INTO merker (schluessel, wert) VALUES ('positionen', '1')").run();
 }
 
 /** Der Datenordner fehlt oder ist für den Container nicht beschreibbar. */

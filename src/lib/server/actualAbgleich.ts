@@ -99,8 +99,20 @@ export function warnungenFuer(person: PersonId): Warnung[] {
 	const p = ladePerson(person);
 	const stand = ladeActualStand<Schnappschuss>(person);
 	if (!p.actualKontoId || !stand) return [];
-	const { aufstellung } = personAnsicht(person, heute());
+	const { aufstellung, auftraege, gemeinschaft } = personAnsicht(person, heute());
+	const gemeinschaftsAuftrag = auftraege.find((a) => a.bausteine.some((b) => b.typ === 'gemeinschaft'));
+	const kategorien = new Map(stand.daten.kategorien.map((k) => [k.id, k.name]));
 	return pruefeTerminplaene({
+		gemeinschaft: gemeinschaftsAuftrag
+			? {
+					auftrag: gemeinschaftsAuftrag.name,
+					teile: gemeinschaft.anteil[person].positionen.map((t, i) => ({
+						...t,
+						kategorieId: gemeinschaft.konto.positionen[i]?.kategorie[person] ?? null
+					}))
+				}
+			: null,
+		kategorieName: (id) => kategorien.get(id) ?? 'unbekannte Kategorie',
 		terminplaene: stand.daten.terminplaene,
 		zuordnung: rollenVon(person),
 		kontoId: p.actualKontoId,

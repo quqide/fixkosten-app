@@ -3,6 +3,7 @@
 	import Icon from '#lib/components/Icon.svelte';
 	import { betragFeld, eur, intervallText, zeitpunkt } from '#lib/format.ts';
 	import { THEMES } from '#lib/themes.ts';
+	import { SCHRITTE } from '#lib/rechnung/rundung.ts';
 	import { mitRueckmeldung, rueckgaengig, toast } from '#lib/toast.svelte.ts';
 	import type { PageProps } from './$types';
 
@@ -12,12 +13,88 @@
 	const fehler = $derived((form?.fehler ?? {}) as Record<string, string>);
 	const fehlerIn = (bereich: string) => (form?.bereich === bereich ? fehler : {});
 
-	let rueckstellungen = $state<{ name: string; betrag: string; ziel: string }[]>([]);
+	type RueckEntwurf = {
+		schluessel: number;
+		id?: number;
+		name: string;
+		art: 'fest' | 'faellig' | 'ziel';
+		betrag: string;
+		zielArt: 'betrag' | 'netto';
+		ziel: string;
+		faellig: string;
+		wohinArt: 'konto' | 'wkn';
+		wohin: string;
+		aktiv: boolean;
+		kategorie: string;
+		stand: string;
+	};
+	let rueckstellungen = $state<RueckEntwurf[]>([]);
+	let rSchluessel = 0;
 	$effect(() => {
-		rueckstellungen = data.rueckstellungen.map((r) => ({ name: r.name, betrag: betragFeld(r.betragCent), ziel: r.zielkonto ?? '' }));
+		rueckstellungen = data.rueckstellungen.map(({ eintrag: r }) => ({
+			schluessel: rSchluessel++,
+			id: r.id,
+			name: r.name,
+			art: r.art,
+			betrag: r.art === 'faellig' ? '' : betragFeld(r.betragCent),
+			zielArt: r.zielNettoFaktor ? 'netto' : 'betrag',
+			ziel: r.zielNettoFaktor ? r.zielNettoFaktor.toLocaleString('de-DE') : r.zielCent != null ? betragFeld(r.zielCent) : '',
+			faellig: r.faellig ?? '',
+			wohinArt: r.wkn ? 'wkn' : 'konto',
+			wohin: r.wkn ?? r.zielkonto ?? '',
+			aktiv: r.aktiv,
+			kategorie: r.actualKategorie ?? '',
+			stand: r.standCent != null ? betragFeld(r.standCent) : ''
+		}));
 	});
+	function neueRueckstellung() {
+		rueckstellungen.push({ schluessel: rSchluessel++, name: '', art: 'fest', betrag: '', zielArt: 'betrag', ziel: '', faellig: '', wohinArt: 'konto', wohin: '', aktiv: true, kategorie: '', stand: '' });
+	}
+	const ARTEN = [
+		{ wert: 'fest', name: 'Fester Betrag' },
+		{ wert: 'faellig', name: 'Bis Datum' },
+		{ wert: 'ziel', name: 'Bis Ziel' }
+	] as const;
+	/** Gespeicherter Stand zu einem Entwurf, solange er nicht neu ist. */
+	const standZu = (r: RueckEntwurf) => data.rueckstellungen.find((s) => s.eintrag.id != null && s.eintrag.id === r.id);
+	function statusText(s: NonNullable<ReturnType<typeof standZu>>) {
+		if (s.status === 'pausiert') return 'Pausiert, geht diesen Monat nichts drauf.';
+		if (s.status === 'erreicht') return 'Ziel erreicht, pausiert sich von selbst, bis wieder Geld fehlt.';
+		if (s.status === 'faellig') return 'Fälligkeit ist vorbei.';
+		const rate = `Diesen Monat ${eur(s.rateCent)}`;
+		return s.restRaten ? `${rate}, noch ${s.restRaten} ${s.restRaten === 1 ? 'Rate' : 'Raten'}.` : `${rate}.`;
+	}
 
 	let importBestaetigen = $state(false);
+
+	const BAUSTEINE = [
+		{ typ: 'prozent', name: 'Prozent vom Netto' },
+		{ typ: 'fest', name: 'Fester Betrag' },
+		{ typ: 'gemeinschaft', name: 'Anteil Gemeinschaftskonto' },
+		{ typ: 'ruecklagen', name: 'Rücklagen mit Ziel' },
+		{ typ: 'fixkosten', name: 'Rate für Fixkosten' },
+		{ typ: 'rest', name: 'Was übrig bleibt' }
+	] as const;
+	type BausteinEntwurf = { typ: (typeof BAUSTEINE)[number]['typ']; wert: string };
+	type AuftragEntwurf = { schluessel: number; name: string; zielkonto: string; bausteine: BausteinEntwurf[]; rundung: { schritt: number; richtung: 'auf' | 'ab' | 'kaufm' } };
+	let auftraege = $state<AuftragEntwurf[]>([]);
+	let schluessel = 0;
+	$effect(() => {
+		auftraege = data.auftraege.map((a) => ({
+			schluessel: schluessel++,
+			name: a.name,
+			zielkonto: a.zielkonto,
+			bausteine: a.bausteine.map((b) => ({
+				typ: b.typ,
+				wert: b.typ === 'fest' ? betragFeld(b.betragCent) : b.typ === 'prozent' ? b.prozent.toLocaleString('de-DE') : b.typ === 'ruecklagen' ? b.ziel : ''
+			})),
+			rundung: a.rundung ?? (a.bausteine.some((b) => b.typ === 'rest') ? { schritt: 100, richtung: 'ab' } : { schritt: 1, richtung: 'kaufm' })
+		}));
+	});
+	function neuerAuftrag() {
+		auftraege.push({ schluessel: schluessel++, name: '', zielkonto: '', bausteine: [{ typ: 'fest', wert: '' }], rundung: { schritt: 1, richtung: 'kaufm' } });
+	}
+	const ziele = $derived([...new Set([...data.rueckstellungen.map((r) => r.eintrag.wkn || r.eintrag.zielkonto || ''), ...data.auftraege.map((a) => a.zielkonto)].filter(Boolean))]);
 
 	const modelle = [
 		{ wert: 1, titel: 'Spaßkonto mit festem Betrag', text: 'Fixkosten gehen direkt vom Gehaltskonto ab. Die App rechnet aus, wie viel aufs Spaßkonto darf.' },
@@ -69,7 +146,6 @@
 		{#each [
 			{ id: 'name', label: 'Dein Name', wert: p.name, modus: 'text', hilfe: '' },
 			{ id: 'netto', label: 'Nettogehalt pro Monat', wert: betragFeld(p.nettoCent), modus: 'decimal', hilfe: 'In Euro, zum Beispiel 3450' },
-			{ id: 'etf', label: 'ETF-Sparquote in Prozent', wert: p.etfProzent.toLocaleString('de-DE'), modus: 'decimal', hilfe: 'Anteil vom Netto, der jeden Monat ins Depot geht.' },
 			{ id: 'tag', label: 'Tag der Daueraufträge', wert: String(p.ueberweisungstag), modus: 'numeric', hilfe: 'An diesem Tag gehen alle Überweisungen vom Gehaltskonto raus.' },
 			{ id: 'puffer', label: 'Puffer, bevor die App „übrig“ meldet', wert: betragFeld(p.pufferCent), modus: 'decimal', hilfe: 'Bis zu diesem Betrag über dem Soll gilt alles als im Plan.' }
 		] as feld (feld.id)}
@@ -85,25 +161,138 @@
 	</div>
 </form>
 
-<form method="POST" action="?/rueckstellungen" use:enhance={mitRueckmeldung()} class="section">
-	<div class="section-head"><h2>Feste Rücklagen</h2><span class="aside">gehen jeden Monat raus</span></div>
+<form method="POST" action="?/auftraege" use:enhance={mitRueckmeldung()} class="section">
+	<div class="section-head"><h2>Daueraufträge</h2><span class="aside">am {p.ueberweisungstag}. vom Gehaltskonto</span></div>
+	<input type="hidden" name="auftraege" value={JSON.stringify(auftraege)} />
 	<div class="card">
-		{#each rueckstellungen as r, i (i)}
-			<fieldset class="field rueck">
-				<legend class="label">Rücklage {i + 1}</legend>
-				<input name="r_name" bind:value={r.name} placeholder="Wofür? z. B. Urlaub" aria-label="Wofür" />
+		{#each auftraege as a, i (a.schluessel)}
+			<fieldset class="field auftrag">
+				<legend class="label">Dauerauftrag {i + 1}</legend>
 				<div class="inline-fields">
-					<input name="r_betrag" bind:value={r.betrag} inputmode="decimal" placeholder="Betrag pro Monat" aria-label="Betrag pro Monat" />
-					<input name="r_ziel" bind:value={r.ziel} placeholder="Auf welches Konto?" aria-label="Zielkonto" />
+					<input bind:value={a.name} placeholder="Name, z. B. ETF Invest" aria-label="Name" />
+					<input bind:value={a.zielkonto} placeholder="Auf welches Konto?" aria-label="Zielkonto" list="ziele" />
 				</div>
+				<span class="help">Setzt sich zusammen aus:</span>
+				{#each a.bausteine as b, j (j)}
+					<div class="baustein">
+						<select bind:value={b.typ} aria-label="Baustein">
+							{#each BAUSTEINE as t (t.typ)}<option value={t.typ}>{t.name}</option>{/each}
+						</select>
+						{#if b.typ === 'fest'}<input bind:value={b.wert} inputmode="decimal" placeholder="Betrag" aria-label="Betrag" />
+						{:else if b.typ === 'prozent'}<input bind:value={b.wert} inputmode="decimal" placeholder="Prozent" aria-label="Prozent vom Netto" />
+						{:else if b.typ === 'ruecklagen'}<input bind:value={b.wert} placeholder="Ziel der Rücklagen" aria-label="Ziel der Rücklagen" list="ziele" />{/if}
+						{#if a.bausteine.length > 1}<button type="button" class="textlink entfernen" aria-label="Baustein entfernen" onclick={() => a.bausteine.splice(j, 1)}>Entfernen</button>{/if}
+					</div>
+				{/each}
+				<button type="button" class="textlink plus" onclick={() => a.bausteine.push({ typ: 'fest', wert: '' })}>+ Baustein</button>
+				<div class="baustein">
+					<span class="help">Rundung</span>
+					<select bind:value={a.rundung.schritt} aria-label="Rundungsschritt">
+						{#each SCHRITTE as sch (sch)}<option value={sch}>{sch === 1 ? 'centgenau' : `auf ${(sch / 100).toLocaleString('de-DE')} €`}</option>{/each}
+					</select>
+					{#if a.rundung.schritt > 1}
+						<select bind:value={a.rundung.richtung} aria-label="Rundungsrichtung">
+							<option value="auf">aufrunden</option><option value="ab">abrunden</option><option value="kaufm">kaufmännisch</option>
+						</select>
+					{/if}
+				</div>
+				{#if fehlerIn('auftraege')[`a_${i}`]}<span class="error">{fehlerIn('auftraege')[`a_${i}`]}</span>{/if}
+				<div class="aktionen">
+					{#if i > 0}<button type="button" class="textlink" onclick={() => auftraege.splice(i - 1, 0, ...auftraege.splice(i, 1))}>Nach oben</button>{/if}
+					<button type="button" class="textlink entfernen" onclick={() => auftraege.splice(i, 1)}>Dauerauftrag entfernen</button>
+				</div>
+			</fieldset>
+		{/each}
+		{#if fehlerIn('auftraege').allgemein}<div class="field"><span class="error">{fehlerIn('auftraege').allgemein}</span></div>{/if}
+		<div class="field buttons">
+			<button type="button" class="secondary" onclick={neuerAuftrag}><Icon name="plus" size={18} />Dauerauftrag hinzufügen</button>
+			<button class="primary" type="submit">Speichern</button>
+		</div>
+	</div>
+	<datalist id="ziele">{#each ziele as z (z)}<option value={z}></option>{/each}</datalist>
+	<p class="note">Die Beträge rechnet die App jeden Monat neu aus. „Was übrig bleibt“ gleicht alle Rundungen aus.</p>
+</form>
+
+<form method="POST" action="?/rueckstellungen" use:enhance={mitRueckmeldung()} class="section">
+	<div class="section-head"><h2>Rückstellungen</h2><span class="aside">gehen jeden Monat raus</span></div>
+	<input type="hidden" name="rueckstellungen" value={JSON.stringify(rueckstellungen)} />
+	<div class="card">
+		{#each rueckstellungen as r, i (r.schluessel)}
+			{@const s = standZu(r)}
+			<fieldset class="field rueck" class:pausiert={!r.aktiv}>
+				<legend class="label">Rückstellung {i + 1}</legend>
+				<div class="inline-fields">
+					<input bind:value={r.name} placeholder="Wofür? z. B. Notgroschen" aria-label="Wofür" />
+					<select bind:value={r.art} aria-label="Art" title="Fester Betrag: jeden Monat gleich. Bis Datum: die Rate ergibt sich aus Ziel und Fälligkeit. Bis Ziel: fester Betrag, bis das Ziel erreicht ist.">
+						{#each ARTEN as a (a.wert)}<option value={a.wert}>{a.name}</option>{/each}
+					</select>
+				</div>
+				<div class="inline-fields">
+					{#if r.art !== 'faellig'}
+						<label class="mini"><span>Pro Monat</span><input bind:value={r.betrag} inputmode="decimal" placeholder="z. B. 200" aria-label="Betrag pro Monat" /></label>
+					{/if}
+					{#if r.art === 'ziel'}
+						<label class="mini"><span>Ziel</span>
+							<span class="mit-einheit">
+								<input bind:value={r.ziel} inputmode="decimal" placeholder={r.zielArt === 'netto' ? 'z. B. 3' : 'z. B. 5000'} aria-label="Ziel" />
+								<select bind:value={r.zielArt} aria-label="Ziel in">
+									<option value="betrag">€</option>
+									<option value="netto">× Netto</option>
+								</select>
+							</span>
+						</label>
+					{:else if r.art === 'faellig'}
+						<label class="mini"><span>Betrag</span><input bind:value={r.ziel} inputmode="decimal" placeholder="z. B. 600" aria-label="Zielbetrag" /></label>
+						<label class="mini"><span>Fällig am</span><input type="date" bind:value={r.faellig} aria-label="Fällig am" /></label>
+					{/if}
+				</div>
+				<div>
+					<label class="mini"><span>Wohin</span>
+						<span class="mit-einheit">
+							<select bind:value={r.wohinArt} aria-label="Wohin">
+								<option value="konto">Konto</option>
+								<option value="wkn">WKN</option>
+							</select>
+							<input bind:value={r.wohin} list="ziele" placeholder={r.wohinArt === 'wkn' ? 'z. B. A0RPWH' : 'z. B. Tagesgeld'} aria-label={r.wohinArt === 'wkn' ? 'WKN' : 'Zielkonto'} />
+						</span>
+					</label>
+				</div>
+				{#if r.art !== 'fest'}
+					<div class:inline-fields={!r.kategorie}>
+						{#if data.ausgabeKategorien.length}
+							<label class="mini"><span>Stand aus</span>
+								<select bind:value={r.kategorie} aria-label="Stand aus">
+									<option value="">von Hand</option>
+									{#each data.ausgabeKategorien as k (k.id)}<option value={k.id}>Actual: {k.name}</option>{/each}
+								</select>
+							</label>
+						{/if}
+						{#if !r.kategorie}
+							<label class="mini"><span>Liegt schon da</span><input bind:value={r.stand} inputmode="decimal" placeholder="z. B. 0" aria-label="Aktueller Stand" /></label>
+						{/if}
+					</div>
+				{/if}
+				<label class="check"><input type="checkbox" bind:checked={r.aktiv} /> Aktiv</label>
+				{#if s}
+					<div class="stand">
+						{#if s.fortschritt != null}
+							<div class="balken" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={Math.round(s.fortschritt * 100)}>
+								<span style="width:{s.fortschritt * 100}%"></span>
+							</div>
+							<span class="help">{eur(s.standCent ?? 0)} von {eur(s.zielCent ?? 0)}{s.standQuelle === 'actual' ? ' (aus Actual)' : ''}</span>
+						{/if}
+						<span class="help">{statusText(s)}</span>
+					</div>
+				{/if}
 				{#if fehlerIn('rueckstellungen')[`r_${i}`]}<span class="error">{fehlerIn('rueckstellungen')[`r_${i}`]}</span>{/if}
 				<button type="button" class="textlink entfernen" onclick={() => rueckstellungen.splice(i, 1)}>Entfernen</button>
 			</fieldset>
 		{:else}
-			<div class="field"><span class="help">Zum Beispiel für den Urlaub oder die Schlussrate vom Auto. Diese Beträge gehen fest jeden Monat vom Gehaltskonto ab.</span></div>
+			<div class="field"><span class="help">Zum Beispiel für den Urlaub, die Kfz-Versicherung im März oder den Notgroschen. Die Rate geht über einen Dauerauftrag mit „Rücklagen mit Ziel“ raus.</span></div>
 		{/each}
+		{#if fehlerIn('rueckstellungen').allgemein}<div class="field"><span class="error">{fehlerIn('rueckstellungen').allgemein}</span></div>{/if}
 		<div class="field buttons">
-			<button type="button" class="secondary" onclick={() => rueckstellungen.push({ name: '', betrag: '', ziel: '' })}><Icon name="plus" size={18} />Rücklage hinzufügen</button>
+			<button type="button" class="secondary" onclick={neueRueckstellung}><Icon name="plus" size={18} />Rückstellung hinzufügen</button>
 			<button class="primary" type="submit">Speichern</button>
 		</div>
 	</div>
@@ -283,9 +472,25 @@ ACTUAL_{p.id.toUpperCase()}_SYNC_ID=Sync-ID aus Actual (Einstellungen → Erweit
 <style>
 	.rueck { border: 0; margin: 0; }
 	.rueck legend { padding: 0; margin-bottom: 6px; }
+	.rueck.pausiert input:not([type='checkbox']), .rueck.pausiert select { opacity: 0.6; }
+	.mini { display: grid; gap: 4px; min-width: 0; flex: 1; }
+	.mini > span:first-child { font-size: 0.8rem; color: var(--secondary); }
+	.mit-einheit { display: flex; gap: 6px; }
+	.mit-einheit > input { flex: 1; min-width: 0; }
+	.mit-einheit > select { flex: 0 0 auto; width: auto; }
+	.stand { display: grid; gap: 4px; }
+	.balken { height: 6px; border-radius: 3px; background: var(--fill); overflow: hidden; }
+	.balken span { display: block; height: 100%; background: var(--tint); }
 	.entfernen { justify-self: start; color: var(--warm); }
 	.buttons { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; }
 	.help-text { margin: 0; color: var(--secondary); }
+	.auftrag { border: 0; margin: 0; }
+	.auftrag legend { padding: 0; margin-bottom: 6px; }
+	.baustein { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+	.baustein select, .baustein input { flex: 1 1 140px; font-size: 15px; min-height: 44px; }
+	.baustein .help { flex: 0 0 auto; }
+	.plus { justify-self: start; }
+	.aktionen { display: flex; gap: 16px; }
 	.abruf .secondary { justify-self: start; }
 	.stufe { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; flex: none; }
 	.stufe.warnung { background: var(--warm-soft); color: var(--warm); }

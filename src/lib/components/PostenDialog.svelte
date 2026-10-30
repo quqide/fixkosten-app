@@ -7,6 +7,8 @@
 	import type { SubmitFunction } from '$app/forms';
 	import { heute } from '#lib/rechnung/datum.ts';
 	import Icon from './Icon.svelte';
+	import PostenSymbol from './PostenSymbol.svelte';
+	import { POSTEN_ICONS, schlageIconVor, type PostenIcon } from '#lib/postenIcons.ts';
 
 	type Posten = FixkostenPosten & { id?: number; actualTerminplan?: string | null };
 
@@ -15,6 +17,10 @@
 	let dialog: HTMLDialogElement;
 	let fehler = $state<Record<string, string>>({});
 	let beteiligungen = $state<{ name: string; betrag: string; tag: string }[]>([]);
+	let name = $state('');
+	let icon = $state('');
+	const vorschlag = $derived(schlageIconVor(name));
+	const iconListe = Object.entries(POSTEN_ICONS) as [PostenIcon, { name: string; svg: string }][];
 
 	const neu = $derived(posten != null && posten.id == null);
 	/** Name, Betrag, Rhythmus und Termin pflegt Actual. */
@@ -23,6 +29,8 @@
 	$effect(() => {
 		if (posten) {
 			fehler = {};
+			name = posten.name ?? '';
+			icon = posten.icon ?? '';
 			beteiligungen = (posten.beteiligungen ?? []).map((b) => ({
 				name: b.name,
 				betrag: betragFeld(b.betragCent),
@@ -68,7 +76,7 @@
 				<div class="card">
 					<div class="field">
 						<label for="p-name">Wofür?</label>
-						<input id="p-name" name="name" value={posten.name} readonly={ausActual} placeholder="z. B. Netflix" autocomplete="off"
+						<input id="p-name" name="name" bind:value={name} readonly={ausActual} placeholder="z. B. Netflix" autocomplete="off"
 							aria-invalid={!!fehler.name} aria-describedby={fehler.name ? 'p-name-f' : undefined} />
 						{#if fehler.name}<span class="error" id="p-name-f">{fehler.name}</span>{/if}
 					</div>
@@ -103,6 +111,31 @@
 				</div>
 
 				<div class="card">
+					<details class="field symbol-wahl">
+						<summary>
+							<PostenSymbol {name} icon={icon || null} klasse="a20" />
+							<span class="label">Symbol</span>
+							<span class="help">{icon ? POSTEN_ICONS[icon as PostenIcon]?.name : vorschlag ? `Automatisch: ${POSTEN_ICONS[vorschlag].name}` : 'Automatisch: Anfangsbuchstabe'}</span>
+						</summary>
+						<div class="symbole" role="radiogroup" aria-label="Symbol">
+							<label title="Automatisch nach dem Namen">
+								<input type="radio" name="icon" value="" bind:group={icon} />
+								<span class="wahl auto">Auto</span>
+							</label>
+							{#each iconListe as [id, s] (id)}
+								<label title={s.name}>
+									<input type="radio" name="icon" value={id} bind:group={icon} />
+									<span class="wahl">
+										<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+											<!-- eslint-disable-next-line svelte/no-at-html-tags -- feste Pfade aus postenIcons.ts -->
+											{@html s.svg}
+										</svg>
+									</span>
+									<span class="visually-hidden">{s.name}</span>
+								</label>
+							{/each}
+						</div>
+					</details>
 					<div class="field">
 						<label for="p-art">Art</label>
 						<select id="p-art" name="art" value={posten.art ?? '50 (Lebenshaltung)'}>
@@ -161,4 +194,14 @@
 	.bet { border: 0; margin: 0; padding: 12px 0; display: grid; gap: 8px; border-bottom: 1px solid var(--separator); }
 	.bet input { font-size: 16px; }
 	.textlink { justify-self: start; color: var(--warm); }
+	.symbol-wahl summary { display: flex; align-items: center; gap: 12px; cursor: pointer; list-style: none; }
+	.symbol-wahl summary::-webkit-details-marker { display: none; }
+	.symbol-wahl summary .help { margin-left: auto; text-align: right; }
+	.symbole { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 6px; margin-top: 12px; }
+	.symbole label { position: relative; }
+	.symbole input { position: absolute; opacity: 0; inset: 0; margin: 0; }
+	.wahl { display: grid; place-items: center; height: 44px; border-radius: 12px; background: var(--fill); color: var(--secondary); }
+	.wahl.auto { font-size: 12px; font-weight: 600; }
+	.symbole input:checked + .wahl { background: var(--tint-soft); color: var(--tint); box-shadow: inset 0 0 0 2px var(--tint); }
+	.symbole input:focus-visible + .wahl { outline: 2px solid var(--tint); outline-offset: 2px; }
 </style>

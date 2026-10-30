@@ -1,3 +1,4 @@
+import { istPostenIcon } from '#lib/postenIcons.ts';
 import { ABBUCHUNGSARTEN, ARTEN, type Abbuchungsart, type Art } from '#lib/rechnung/fixkosten.ts';
 import { parseDatum } from '#lib/rechnung/datum.ts';
 import { leseBetrag, leseGanzzahl } from '#lib/eingabe.ts';
@@ -26,6 +27,7 @@ export function lesePosten(f: FormData, besitzer: Besitzer): { eintrag: PostenEi
 	const art = text(f, 'art');
 	const abbuchungsart = text(f, 'abbuchungsart');
 	const idText = text(f, 'id');
+	const icon = text(f, 'icon');
 
 	if (!name) fehler.name = 'Gib dem Posten einen Namen, zum Beispiel „Netflix“.';
 	if (betragCent == null) fehler.betrag = 'Bitte einen Betrag eintragen, zum Beispiel 12,99.';
@@ -61,6 +63,7 @@ export function lesePosten(f: FormData, besitzer: Besitzer): { eintrag: PostenEi
 			abbuchungsart: (ABBUCHUNGSARTEN as readonly string[]).includes(abbuchungsart)
 				? (abbuchungsart as Abbuchungsart)
 				: null,
+			icon: istPostenIcon(icon) ? icon : null,
 			beteiligungen
 		}
 	};
