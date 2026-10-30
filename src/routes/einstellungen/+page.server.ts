@@ -16,6 +16,7 @@ import {
 import type { PersonId } from '#lib/server/db.ts';
 import {
 	aenderePerson,
+	aendereModus,
 	importiere,
 	ladeAuftraege,
 	speichereAuftraege,
@@ -78,7 +79,6 @@ export const actions: Actions = {
 		const wer = angemeldet(locals);
 		const modus = Number((await request.formData()).get('modus'));
 		if (modus !== 1 && modus !== 2) return fail(400, { bereich: 'modus', fehler: { modus: 'Bitte wähle ein Kontenmodell.' } });
-		const undoId = aenderePerson(wer, { modus }, wer, 'Kontenmodell geändert');
 		// Daueraufträge passend machen: Modus 2 braucht die Fixkosten-Rate, Modus 1 einen Rest fürs Spaßkonto.
 		let auftraege = ladeAuftraege(wer);
 		const hatRate = (a: AuftragKonfig) => a.bausteine.some((b) => b.typ === 'fixkosten');
@@ -93,7 +93,7 @@ export const actions: Actions = {
 				auftraege.push({ name: 'Spaßkonto', zielkonto: 'Spaßkonto', bausteine: [{ typ: 'rest' }], rundung: STANDARD_REST_RUNDUNG });
 			}
 		}
-		speichereAuftraege(wer, auftraege, wer, 'Daueraufträge an Kontenmodell angepasst');
+		const undoId = aendereModus(wer, modus, auftraege, wer);
 		return { meldung: 'Kontenmodell geändert, Daueraufträge angepasst.', undoId };
 	},
 

@@ -135,6 +135,12 @@ export function berechneAufstellung(e: AufstellungEingaben): Monatsaufstellung {
 	if (e.modus === 2 && !hatFixkostenRate) {
 		warnungen.push('Im Modell „Eigenes Fixkosten-Konto“ fehlt der Dauerauftrag mit der Fixkosten-Rate.');
 	}
+	if (e.modus === 1 && hatFixkostenRate) {
+		// Die Fixkosten bleiben in Modus 1 auf dem Gehaltskonto; eine Rate würde sie doppelt abziehen.
+		warnungen.push(
+			'Im Modell „Spaßkonto mit festem Betrag“ bleiben die Fixkosten auf dem Gehaltskonto. Der Dauerauftrag mit der Fixkosten-Rate zieht sie doppelt ab.'
+		);
+	}
 	const abgedeckt = new Set(
 		e.auftraege.flatMap((a) => a.bausteine.flatMap((b) => (b.typ === 'ruecklagen' ? [b.ziel.trim()] : [])))
 	);

@@ -195,6 +195,22 @@ describe('Aufteilung des Gemeinschafts-Dauerauftrags', () => {
 		expect(t).toContain('warnung: Gemeinschaftskonto/Miete: In Actual 270,00 €, berechnet 261,28 €.');
 		expect(t).toContain('hinweis: „gem“ hat einen Teil für Urlaub, den keine Position des Gemeinschaftskontos nutzt.');
 	});
+
+	it('fasst Positionen mit derselben Kategorie zusammen', () => {
+		const e = basis([plan({ id: 'gem', betragCent: 69674, aufteilung: [{ kategorieId: 'wohnen', betragCent: 31934 }, { kategorieId: 'alltag', betragCent: 37740 }] })], [['gem', rolle]]);
+		e.dauerauftraege = [{ name: 'Gemeinschaftskonto', zielkonto: '', betragCent: 69674 }];
+		e.gemeinschaft = {
+			auftrag: 'Gemeinschaftskonto',
+			teile: [
+				{ name: 'Miete', kategorieId: 'wohnen', betragCent: 26128 },
+				{ name: 'Nebenkosten', kategorieId: 'wohnen', betragCent: 5806 },
+				{ name: 'Alltag', kategorieId: 'alltag', betragCent: 37740 }
+			]
+		};
+		expect(texte(e)).toEqual([]);
+		e.gemeinschaft.teile[1].betragCent = 6000;
+		expect(texte(e)).toEqual(['warnung: Gemeinschaftskonto/Miete + Nebenkosten: In Actual 319,34 €, berechnet 321,28 €.']);
+	});
 });
 
 describe('Vorschlag für neue Terminpläne', () => {

@@ -225,15 +225,23 @@ export function pruefeTerminplaene(e: PruefungEingaben): Warnung[] {
 				tun: `Im Terminplan aufteilen: ${soll.teile.filter((t) => t.kategorieId).map((t) => `${kat(t.kategorieId)} ${eur(t.betragCent)}`).join(', ')}.`
 			});
 		} else if (plan?.aufteilung) {
+			// Positionen mit derselben Kategorie zusammenfassen: Actual kennt nur den Teil je Kategorie.
+			const jeKategorie = new Map<string, { namen: string[]; betragCent: number }>();
 			for (const t of soll.teile) {
 				if (!t.kategorieId) continue;
-				const ist = plan.aufteilung.filter((a) => a.kategorieId === t.kategorieId).reduce((s, a) => s + a.betragCent, 0);
-				if (ist !== t.betragCent) {
+				const g = jeKategorie.get(t.kategorieId) ?? { namen: [], betragCent: 0 };
+				g.namen.push(t.name);
+				g.betragCent += t.betragCent;
+				jeKategorie.set(t.kategorieId, g);
+			}
+			for (const [kategorieId, g] of jeKategorie) {
+				const ist = plan.aufteilung.filter((a) => a.kategorieId === kategorieId).reduce((s, a) => s + a.betragCent, 0);
+				if (ist !== g.betragCent) {
 					w.push({
 						stufe: 'warnung',
 						terminplanId: plan.id,
-						text: `${soll.auftrag}/${t.name}: In Actual ${eur(ist)}, berechnet ${eur(t.betragCent)}.`,
-						tun: `Im Terminplan „${plan.name}“ den Teil für ${kat(t.kategorieId)} auf ${eur(t.betragCent)} setzen.`
+						text: `${soll.auftrag}/${g.namen.join(' + ')}: In Actual ${eur(ist)}, berechnet ${eur(g.betragCent)}.`,
+						tun: `Im Terminplan „${plan.name}“ den Teil für ${kat(kategorieId)} auf ${eur(g.betragCent)} setzen.`
 					});
 				}
 			}

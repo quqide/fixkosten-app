@@ -95,7 +95,9 @@ type Rueckgaengig =
 	| { typ: 'person'; vorher: Person }
 	| { typ: 'gemeinschaft'; vorher: GemeinschaftEintrag }
 	| { typ: 'rueckstellungen'; person: PersonId; vorher: RueckstellungEintrag[] }
-	| { typ: 'auftraege'; person: PersonId; vorher: AuftragEintrag[] };
+	| { typ: 'auftraege'; person: PersonId; vorher: AuftragEintrag[] }
+	/** Kontenmodell und die dazu angepassten Daueraufträge, nur gemeinsam rückgängig. */
+	| { typ: 'modus'; vorher: Person; auftraege: AuftragEintrag[] };
 
 type Zeile = Record<string, unknown>;
 
@@ -539,6 +541,21 @@ export function speichereAuftraege(person: PersonId, liste: AuftragKonfig[], wer
 	});
 }
 
+/** Wechselt das Kontenmodell und passt die Daueraufträge an, in einem Schritt (auch beim Rückgängigmachen). */
+export function aendereModus(person: PersonId, modus: Kontenmodus, auftraege: AuftragKonfig[], wer: PersonId) {
+	return inTransaktion(() => {
+		const vorher = ladePerson(person);
+		const auftraegeVorher = ladeAuftraege(person);
+		schreibePerson({ ...vorher, modus });
+		schreibeAuftraege(person, auftraege);
+		return protokolliere(wer, `person-${person}`, 'Kontenmodell geändert, Daueraufträge angepasst', {
+			typ: 'modus',
+			vorher,
+			auftraege: auftraegeVorher
+		});
+	});
+}
+
 export function aendereGemeinschaft(teil: Partial<GemeinschaftEintrag>, wer: PersonId, text: string) {
 	return inTransaktion(() => {
 		const vorher = ladeGemeinschaft();
@@ -601,6 +618,10 @@ export function macheRueckgaengig(id: number, wer: PersonId): string | null {
 				break;
 			case 'auftraege':
 				schreibeAuftraege(r.person, r.vorher);
+				break;
+			case 'modus':
+				schreibePerson(r.vorher);
+				schreibeAuftraege(r.vorher.id, r.auftraege);
 				break;
 			case 'rueckstellungen':
 				schreibeRueckstellungen(r.person, r.vorher);
