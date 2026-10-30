@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { env } from 'node:process';
+import { verteileWieActual } from '#lib/rechnung/aufteilung.ts';
 import type { Buchung } from '#lib/rechnung/abgleich.ts';
 import type { Terminplan } from '#lib/rechnung/terminplan.ts';
 import type { PersonId } from './db.ts';
@@ -186,26 +187,21 @@ export function ladeAbgleich(
 				const letzte = letzteJePlan.get(t.id);
 				// Aufteilung: je Teil (splitIndex ≥ 1) ein Betrag und eine Kategorie.
 				type Aktion = { op: string; field?: string; value?: unknown; options?: { splitIndex?: number; method?: string } };
-				const teile = new Map<number, { kategorieId: string | null; betragCent: number; methode: string }>();
+				const teile = new Map<number, { kategorieId: string | null; methode: string; wert: number }>();
 				for (const a of (regel?.actions ?? []) as Aktion[]) {
 					const index = a.options?.splitIndex;
 					if (!index) continue;
-					const teil = teile.get(index) ?? { kategorieId: null, betragCent: 0, methode: 'fixed-amount' };
+					const teil = teile.get(index) ?? { kategorieId: null, methode: 'fixed-amount', wert: 0 };
 					if (a.op === 'set-split-amount') {
 						teil.methode = a.options?.method ?? 'fixed-amount';
-						const wert = Number(a.value) || 0;
-						// Prozent werden in Actual als Zahl wie 37,5 gespeichert.
-						teil.betragCent = teil.methode === 'fixed-percent' ? Math.round((Math.abs(cent) * wert) / 100) : Math.abs(wert);
+						// Prozent werden in Actual als Zahl wie 37,5 gespeichert, feste Beträge in Cent.
+						teil.wert = Number(a.value) || 0;
 					}
 					if (a.op === 'set' && a.field === 'category') teil.kategorieId = (a.value as string) ?? null;
 					teile.set(index, teil);
 				}
-				// „Rest“-Teile bekommen, was nach den anderen übrig bleibt.
-				const rest = [...teile.values()].filter((t) => t.methode === 'remainder');
-				if (rest.length) {
-					const vergeben = [...teile.values()].filter((t) => t.methode !== 'remainder').reduce((s, t) => s + t.betragCent, 0);
-					rest[0].betragCent = Math.max(0, Math.abs(cent) - vergeben);
-				}
+				// Actual rechnet mit Vorzeichen (Ausgaben negativ), die App mit positiven Ausgaben.
+				const verteilt = verteileWieActual(-cent, [...teile.entries()].map(([index, v]) => ({ index, methode: v.methode, wert: v.wert })));
 				const empfaenger = t.payee ? (payeeName.get(t.payee) ?? null) : null;
 				return {
 					id: t.id,
@@ -222,7 +218,9 @@ export function ladeAbgleich(
 					kategorieId: (kategorie?.value as string | undefined) ?? null,
 					letzteBuchung: letzte ? { datum: letzte.date, betragCent: -letzte.amount } : null,
 					aufteilung: teile.size
-						? [...teile.entries()].sort(([x], [y]) => x - y).map(([, v]) => ({ kategorieId: v.kategorieId, betragCent: v.betragCent }))
+						? [...teile.entries()]
+								.sort(([x], [y]) => x - y)
+								.map(([index, v]) => ({ kategorieId: v.kategorieId, betragCent: -(verteilt.get(index) ?? 0) }))
 						: null
 				};
 			});

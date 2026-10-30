@@ -61,6 +61,7 @@
 		if (s.status === 'pausiert') return 'Pausiert, geht diesen Monat nichts drauf.';
 		if (s.status === 'erreicht') return 'Ziel erreicht, pausiert sich von selbst, bis wieder Geld fehlt.';
 		if (s.status === 'faellig') return 'Fälligkeit ist vorbei.';
+		if (s.status === 'unbekannt' && !s.rateCent) return 'Ohne Stand ist diesen Monat keine Rate eingeplant.';
 		const rate = `Diesen Monat ${eur(s.rateCent)}`;
 		return s.restRaten ? `${rate}, noch ${s.restRaten} ${s.restRaten === 1 ? 'Rate' : 'Raten'}.` : `${rate}.`;
 	}
@@ -281,6 +282,7 @@
 							</div>
 							<span class="help">{eur(s.standCent ?? 0)} von {eur(s.zielCent ?? 0)}{s.standQuelle === 'actual' ? ' (aus Actual)' : ''}</span>
 						{/if}
+						{#if s.hinweis}<span class="error">{s.hinweis}</span>{/if}
 						<span class="help">{statusText(s)}</span>
 					</div>
 				{/if}
