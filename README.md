@@ -53,7 +53,7 @@ npm start       # gebaute App starten (Daten in ./data)
 Bei jedem Push auf `main` baut GitHub Actions das Image `ghcr.io/quqide/fixkosten-app:latest`.
 
 1. In Dockge einen neuen Stack `fixkosten` anlegen und den Inhalt von [`compose.yaml`](compose.yaml) einfügen.
-2. `POOL` im Datenpfad durch deinen Pool ersetzen und den Ordner vorher anlegen. Der Container läuft als Benutzer mit der ID 1000, der Ordner muss für ihn beschreibbar sein.
+2. `POOL` im Datenpfad durch deinen Pool ersetzen und den Ordner vorher anlegen. Der Container läuft als Benutzer mit der ID 1000, der Ordner muss für ihn beschreibbar sein. Gehört der Ordner dem TrueNAS-Benutzer „apps“ (568), in `compose.yaml` die Zeile `user: "568:568"` aktivieren. Ist der Ordner nicht beschreibbar, zeigt die App das direkt im Browser an.
 3. Stack starten und `http://<NAS>:3080` öffnen. Updates holst du mit „Update“ in Dockge.
 
 Das Repository ist privat, deshalb ist auch das Image zunächst privat. Damit Dockge es ohne Anmeldung laden kann, das Paket unter GitHub → Packages → `fixkosten-app` → Package settings auf „Public“ stellen. Das Image enthält keine persönlichen Daten, die liegen nur im Datenordner.
