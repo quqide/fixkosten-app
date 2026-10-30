@@ -73,6 +73,17 @@ describe('Monatsaufstellung', () => {
 		expect(a.warnungen).toEqual([]);
 	});
 
+	it('ordnet Rücklagen ohne Rücksicht auf Groß- und Kleinschreibung zu (WKN)', () => {
+		const rueck = [{ name: 'Gold', betragCent: 5000, zielkonto: 'A0RPWH' }];
+		const a = berechneAufstellung({
+			...eingaben(),
+			rueckstellungen: rueck,
+			auftraege: [{ name: 'Gold-Sparplan', zielkonto: 'Depot', bausteine: [{ typ: 'ruecklagen', ziel: 'a0rpwh' }] }]
+		});
+		expect(a.dauerauftraege[0].betragCent).toBe(5000);
+		expect(a.warnungen.filter((w) => w.includes('überweist kein Dauerauftrag'))).toEqual([]);
+	});
+
 	it('warnt bei Rücklagen ohne Dauerauftrag und fehlender Fixkosten-Rate in Modus 2', () => {
 		const a = berechneAufstellung({
 			...eingaben(2),

@@ -48,7 +48,7 @@ export const POSTEN_ICONS = {
 
 export type PostenIcon = keyof typeof POSTEN_ICONS;
 
-export const istPostenIcon = (s: unknown): s is PostenIcon => typeof s === 'string' && s in POSTEN_ICONS;
+export const istPostenIcon = (s: unknown): s is PostenIcon => typeof s === 'string' && Object.hasOwn(POSTEN_ICONS, s);
 
 /** Stichworte im Namen → Symbol. Die erste passende Regel gewinnt. */
 const REGELN: [RegExp, PostenIcon][] = [

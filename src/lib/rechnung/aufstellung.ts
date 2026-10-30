@@ -67,6 +67,8 @@ const ETF_RUNDUNG: Rundung = { schritt: 100, richtung: 'kaufm' };
 
 const istRest = (a: AuftragKonfig) => a.bausteine.some((b) => b.typ === 'rest');
 const ziel = (r: Rueckstellung) => (r.zielkonto ?? '').trim();
+/** Ziele vergleichen ohne Rücksicht auf Groß- und Kleinschreibung, z. B. WKN „a0rpwh“ und „A0RPWH“. */
+const gleichesZiel = (a: string, b: string) => a.trim().toLocaleUpperCase('de-DE') === b.trim().toLocaleUpperCase('de-DE');
 
 /** Die Daueraufträge, wie sie die App ohne eigene Einrichtung anlegt. */
 export function standardAuftraege(
@@ -79,9 +81,11 @@ export function standardAuftraege(
 	liste.push({ name: 'ETF-Sparplan', zielkonto: 'Depot', bausteine: [{ typ: 'prozent', prozent: etfProzent }], rundung: ETF_RUNDUNG });
 	const ziele = new Map<string, Rueckstellung[]>();
 	for (const r of rueckstellungen) {
-		ziele.set(ziel(r), [...(ziele.get(ziel(r)) ?? []), r]);
+		const schluessel = ziel(r).toLocaleUpperCase('de-DE');
+		ziele.set(schluessel, [...(ziele.get(schluessel) ?? []), r]);
 	}
-	for (const [z, liste_] of ziele) {
+	for (const liste_ of ziele.values()) {
+		const z = ziel(liste_[0]);
 		liste.push({
 			name: liste_.length === 1 ? liste_[0].name : `Rücklagen ${z}`.trim(),
 			zielkonto: z,
@@ -104,7 +108,7 @@ export function bausteinWert(b: Baustein, e: AufstellungEingaben): number {
 		case 'gemeinschaft':
 			return e.gemeinschaftCent;
 		case 'ruecklagen':
-			return e.rueckstellungen.filter((r) => ziel(r) === b.ziel.trim()).reduce((s, r) => s + r.betragCent, 0);
+			return e.rueckstellungen.filter((r) => gleichesZiel(ziel(r), b.ziel)).reduce((s, r) => s + r.betragCent, 0);
 		case 'fixkosten':
 			return aufEuroAufrunden(e.fixkostenMonatlichCent);
 		case 'rest':
@@ -141,11 +145,9 @@ export function berechneAufstellung(e: AufstellungEingaben): Monatsaufstellung {
 			'Im Modell „Spaßkonto mit festem Betrag“ bleiben die Fixkosten auf dem Gehaltskonto. Der Dauerauftrag mit der Fixkosten-Rate zieht sie doppelt ab.'
 		);
 	}
-	const abgedeckt = new Set(
-		e.auftraege.flatMap((a) => a.bausteine.flatMap((b) => (b.typ === 'ruecklagen' ? [b.ziel.trim()] : [])))
-	);
+	const abgedeckt = e.auftraege.flatMap((a) => a.bausteine.flatMap((b) => (b.typ === 'ruecklagen' ? [b.ziel] : [])));
 	for (const r of e.rueckstellungen) {
-		if (r.betragCent !== 0 && !abgedeckt.has(ziel(r))) {
+		if (r.betragCent !== 0 && !abgedeckt.some((z) => gleichesZiel(z, ziel(r)))) {
 			warnungen.push(`Die Rücklage „${r.name}“ (Ziel ${ziel(r) || 'ohne Konto'}) überweist kein Dauerauftrag.`);
 		}
 	}

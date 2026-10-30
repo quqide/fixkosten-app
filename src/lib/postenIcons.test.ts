@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { iconFuer, POSTEN_ICONS, schlageIconVor } from './postenIcons';
+import { iconFuer, istPostenIcon, POSTEN_ICONS, schlageIconVor } from './postenIcons';
 
 describe('Symbole', () => {
 	it('schlägt nach dem Namen vor', () => {
@@ -17,6 +17,14 @@ describe('Symbole', () => {
 		expect(iconFuer('Netflix', 'herz')).toBe('herz');
 		expect(iconFuer('Netflix', 'gibtsnicht')).toBe('play');
 	});
+	it('erkennt nur eigene Symbole, keine geerbten Eigenschaften', () => {
+		expect(istPostenIcon('haus')).toBe(true);
+		expect(istPostenIcon('constructor')).toBe(false);
+		expect(istPostenIcon('__proto__')).toBe(false);
+		expect(istPostenIcon('toString')).toBe(false);
+		expect(iconFuer('Netflix', 'constructor')).toBe('play');
+	});
+
 	it('hat genug Auswahl', () => {
 		expect(Object.keys(POSTEN_ICONS).length).toBeGreaterThanOrEqual(40);
 	});

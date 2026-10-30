@@ -1,10 +1,12 @@
 import type { Abbuchungsart, Art, Beteiligung, FixkostenPosten } from '#lib/rechnung/fixkosten.ts';
 import type { Aufteilungsmodell } from '#lib/rechnung/gemeinschaft.ts';
-import { standardAuftraege, type AuftragKonfig, type Baustein, type Kontenmodus } from '#lib/rechnung/aufstellung.ts';
+import { type AuftragKonfig, type Baustein, type Kontenmodus } from '#lib/rechnung/aufstellung.ts';
 import type { Rundung } from '#lib/rechnung/rundung.ts';
 import type { Abgleich } from '#lib/rechnung/abgleich.ts';
-import { zielVon, type RueckstellungKonfig, type RueckstellungsArt } from '#lib/rechnung/rueckstellung.ts';
-import { db, type Besitzer, type PersonId } from './db.ts';
+import { type RueckstellungKonfig, type RueckstellungsArt } from '#lib/rechnung/rueckstellung.ts';
+import { db, legeAuftraegeAn, type Besitzer, type PersonId } from './db.ts';
+import { pruefeAuftraege } from './formular.ts';
+import { istPostenIcon } from '#lib/postenIcons.ts';
 
 export type Hell = 'auto' | 'light' | 'dark';
 
@@ -512,18 +514,9 @@ function schreibeAuftraege(person: PersonId, liste: AuftragKonfig[]) {
 	db().prepare('INSERT OR REPLACE INTO merker (schluessel, wert) VALUES (?, ?)').run(`auftraege-${person}`, '1');
 }
 
-/** Die Daueraufträge der Person; beim ersten Aufruf aus den bisherigen Einstellungen angelegt. */
+/** Die Daueraufträge der Person. Die Standard-Aufträge legt die Migration beim Start an. */
 export function ladeAuftraege(person: PersonId): AuftragEintrag[] {
 	const zeilen = db().prepare('SELECT * FROM dauerauftraege WHERE person = ? ORDER BY sortierung, id').all(person) as Zeile[];
-	if (!zeilen.length && !db().prepare('SELECT 1 FROM merker WHERE schluessel = ?').get(`auftraege-${person}`)) {
-		const p = ladePerson(person);
-		schreibeAuftraege(person, standardAuftraege(
-				p.modus,
-				p.etfProzent,
-				ladeRueckstellungen(person).map((r) => ({ name: r.name, betragCent: r.betragCent, zielkonto: zielVon(r) }))
-			));
-		return ladeAuftraege(person);
-	}
 	return zeilen.map((z) => ({
 		id: Number(z.id),
 		name: z.name as string,
@@ -673,12 +666,25 @@ export function importiere(s: Sicherung, wer: PersonId) {
 	if (s?.version !== 1 || !Array.isArray(s.personen) || !Array.isArray(s.posten)) {
 		throw new Error('Die Datei ist keine Sicherung dieser App.');
 	}
+	// Erst alles prüfen, dann schreiben: eine ungültige Sicherung ändert nichts.
+	const auftraege: Partial<Record<PersonId, AuftragKonfig[]>> = {};
+	for (const id of ['a', 'b'] as const) {
+		const liste = s.auftraege?.[id];
+		if (liste == null) continue;
+		const ergebnis = pruefeAuftraege(liste);
+		if ('fehler' in ergebnis) {
+			const name = s.personen.find((p) => p?.id === id)?.name ?? id;
+			throw new Error(`Die Sicherung enthält ungültige Daueraufträge von ${name}: ${Object.values(ergebnis.fehler)[0]}`);
+		}
+		auftraege[id] = ergebnis.auftraege;
+	}
 	inTransaktion(() => {
 		db().exec('DELETE FROM beteiligungen; DELETE FROM posten; DELETE FROM rueckstellungen;');
 		for (const p of s.personen) {
 			if (p.id === 'a' || p.id === 'b') schreibePerson({ ...ladePerson(p.id), ...p });
 		}
-		for (const p of s.posten) schreibePosten({ ...p, beteiligungen: p.beteiligungen ?? [] });
+		// Unbekannte Symbole verwerfen, der Posten zeigt dann wieder den Anfangsbuchstaben.
+		for (const p of s.posten) schreibePosten({ ...p, icon: istPostenIcon(p.icon) ? p.icon : null, beteiligungen: p.beteiligungen ?? [] });
 		for (const id of ['a', 'b'] as const) {
 			schreibeRueckstellungen(id, (s.rueckstellungen ?? []).filter((r) => r.person === id).map(vervollstaendigeRueckstellung));
 		}
@@ -691,12 +697,13 @@ export function importiere(s: Sicherung, wer: PersonId) {
 			});
 		}
 		for (const id of ['a', 'b'] as const) {
-			const liste = s.auftraege?.[id];
+			const liste = auftraege[id];
 			if (liste) schreibeAuftraege(id, liste);
 			else {
-				// Ältere Sicherung: Daueraufträge beim nächsten Laden aus den Einstellungen neu anlegen.
+				// Ältere Sicherung: Daueraufträge aus den eingespielten Einstellungen neu anlegen.
 				db().prepare('DELETE FROM dauerauftraege WHERE person = ?').run(id);
 				db().prepare('DELETE FROM merker WHERE schluessel = ?').run(`auftraege-${id}`);
+				legeAuftraegeAn(db(), id);
 			}
 		}
 		db().exec('DELETE FROM aenderungen');
