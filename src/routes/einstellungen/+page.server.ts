@@ -1,7 +1,7 @@
 import { fail } from '@sveltejs/kit';
 import { leseBetrag, leseGanzzahl, leseProzent } from '#lib/eingabe.ts';
-import { STANDARD_REST_RUNDUNG, type AuftragKonfig, type Baustein } from '#lib/rechnung/aufstellung.ts';
-import { SCHRITTE } from '#lib/rechnung/rundung.ts';
+import { eindeutigeNamen, STANDARD_REST_RUNDUNG, type AuftragKonfig } from '#lib/rechnung/aufstellung.ts';
+import { leseAuftraege } from '#lib/server/formular.ts';
 import { heute } from '#lib/rechnung/datum.ts';
 import { rueckstellungenMitStand } from '#lib/server/ansicht.ts';
 import { angemeldet } from '#lib/server/aktionen.ts';
@@ -93,7 +93,7 @@ export const actions: Actions = {
 				auftraege.push({ name: 'Spaßkonto', zielkonto: 'Spaßkonto', bausteine: [{ typ: 'rest' }], rundung: STANDARD_REST_RUNDUNG });
 			}
 		}
-		const undoId = aendereModus(wer, modus, auftraege, wer);
+		const undoId = aendereModus(wer, modus, eindeutigeNamen(auftraege), wer);
 		return { meldung: 'Kontenmodell geändert, Daueraufträge angepasst.', undoId };
 	},
 
@@ -246,64 +246,6 @@ export const actions: Actions = {
 };
 
 type Roh = Record<string, unknown>;
-
-/** Prüft die Daueraufträge aus dem Formular. */
-function leseAuftraege(roh: unknown): { auftraege: AuftragKonfig[] } | { fehler: Record<string, string> } {
-	const fehler: Record<string, string> = {};
-	const auftraege: AuftragKonfig[] = [];
-	if (!Array.isArray(roh)) return { fehler: { allgemein: 'Die Eingaben ließen sich nicht lesen.' } };
-	roh.forEach((a: Roh, i) => {
-		const name = String(a.name ?? '').trim();
-		if (!name) return void (fehler[`a_${i}`] = 'Bitte einen Namen eintragen, zum Beispiel „ETF Invest“.');
-		const bausteine: Baustein[] = [];
-		for (const b of (Array.isArray(a.bausteine) ? a.bausteine : []) as Roh[]) {
-			switch (b.typ) {
-				case 'fest': {
-					const cent = leseBetrag(String(b.wert ?? ''));
-					if (cent == null || cent < 0) return void (fehler[`a_${i}`] = `„${name}“: Bitte einen Betrag eintragen.`);
-					bausteine.push({ typ: 'fest', betragCent: cent });
-					break;
-				}
-				case 'prozent': {
-					const p = Number(String(b.wert ?? '').replace(',', '.'));
-					if (!Number.isFinite(p) || p < 0 || p > 100) return void (fehler[`a_${i}`] = `„${name}“: Prozent zwischen 0 und 100 eintragen.`);
-					bausteine.push({ typ: 'prozent', prozent: p });
-					break;
-				}
-				case 'ruecklagen':
-					bausteine.push({ typ: 'ruecklagen', ziel: String(b.wert ?? '').trim() });
-					break;
-				case 'gemeinschaft':
-				case 'fixkosten':
-				case 'rest':
-					bausteine.push({ typ: b.typ });
-					break;
-			}
-		}
-		if (!bausteine.length) return void (fehler[`a_${i}`] = `„${name}“: Woraus setzt sich der Betrag zusammen?`);
-		if (bausteine.some((b) => b.typ === 'rest') && bausteine.length > 1) {
-			return void (fehler[`a_${i}`] = `„${name}“: „Was übrig bleibt“ lässt sich nicht mit anderem kombinieren.`);
-		}
-		const r = a.rundung as Roh | undefined;
-		const schritt = Number(r?.schritt ?? 1);
-		const richtung = String(r?.richtung ?? 'kaufm');
-		auftraege.push({
-			name,
-			zielkonto: String(a.zielkonto ?? '').trim(),
-			bausteine,
-			// Beim Rest bedeutet „centgenau“ etwas anderes als „keine Angabe“ (dann auf 1 € abrunden).
-			rundung:
-				(SCHRITTE as readonly number[]).includes(schritt) && ['auf', 'ab', 'kaufm'].includes(richtung) &&
-				(schritt > 1 || bausteine[0].typ === 'rest')
-					? { schritt, richtung: richtung as 'auf' | 'ab' | 'kaufm' }
-					: null
-		});
-	});
-	if (auftraege.filter((a) => a.bausteine.some((b) => b.typ === 'rest')).length > 1) {
-		fehler.allgemein = 'Nur ein Dauerauftrag kann bekommen, was übrig bleibt.';
-	}
-	return Object.keys(fehler).length ? { fehler } : { auftraege };
-}
 
 /** Prüft die Rückstellungen aus dem Formular. */
 function leseRueckstellungen(roh: unknown, person: PersonId): { liste: RueckstellungEintrag[] } | { fehler: Record<string, string> } {

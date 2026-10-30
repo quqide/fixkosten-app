@@ -1,0 +1,42 @@
+import { describe, expect, it } from 'vitest';
+import { leseAuftraege, pruefeAuftraege } from './formular';
+
+describe('Daueraufträge prüfen', () => {
+	it('lehnt doppelte Namen ab', () => {
+		const e = leseAuftraege([
+			{ name: 'Sparen', zielkonto: 'Tagesgeld', bausteine: [{ typ: 'fest', wert: '50' }] },
+			{ name: 'sparen ', zielkonto: 'Depot', bausteine: [{ typ: 'fest', wert: '20' }] }
+		]);
+		expect(e).toEqual({ fehler: { allgemein: expect.stringContaining('doppelt') } });
+	});
+
+	it('liest das Formular in die gespeicherte Form', () => {
+		expect(
+			leseAuftraege([
+				{ name: 'ETF', zielkonto: 'Depot', bausteine: [{ typ: 'prozent', wert: '12,5' }], rundung: { schritt: 1000, richtung: 'auf' } },
+				{ name: 'Gold', zielkonto: 'Depot', bausteine: [{ typ: 'ruecklagen', wert: ' a0rpwh ' }] },
+				{ name: 'Spaß', zielkonto: 'Spaßkonto', bausteine: [{ typ: 'rest', wert: '' }], rundung: { schritt: 1, richtung: 'ab' } }
+			])
+		).toEqual({
+			auftraege: [
+				{ name: 'ETF', zielkonto: 'Depot', bausteine: [{ typ: 'prozent', prozent: 12.5 }], rundung: { schritt: 1000, richtung: 'auf' } },
+				{ name: 'Gold', zielkonto: 'Depot', bausteine: [{ typ: 'ruecklagen', ziel: 'A0RPWH' }], rundung: null },
+				{ name: 'Spaß', zielkonto: 'Spaßkonto', bausteine: [{ typ: 'rest' }], rundung: { schritt: 1, richtung: 'ab' } }
+			]
+		});
+	});
+
+	it('lehnt unbekannte Bausteine und fehlende Felder ab', () => {
+		expect(pruefeAuftraege([{ name: 'X', bausteine: [{ typ: 'zaubern' }] }])).toHaveProperty('fehler.a_0');
+		expect(pruefeAuftraege([{ name: 'X', bausteine: [{ typ: 'fest' }] }])).toHaveProperty('fehler.a_0');
+		expect(pruefeAuftraege([{ name: 'X', bausteine: [{ typ: 'prozent', prozent: 120 }] }])).toHaveProperty('fehler.a_0');
+		expect(pruefeAuftraege([{ bausteine: [{ typ: 'rest' }] }])).toHaveProperty('fehler.a_0');
+		expect(pruefeAuftraege({})).toHaveProperty('fehler.allgemein');
+	});
+
+	it('lässt Kontonamen als Ziel unverändert', () => {
+		expect(pruefeAuftraege([{ name: 'R', bausteine: [{ typ: 'ruecklagen', ziel: 'Tagesgeld ' }] }])).toEqual({
+			auftraege: [{ name: 'R', zielkonto: '', bausteine: [{ typ: 'ruecklagen', ziel: 'Tagesgeld' }], rundung: null }]
+		});
+	});
+});

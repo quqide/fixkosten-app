@@ -1,6 +1,8 @@
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { standardAuftraege } from '#lib/rechnung/aufstellung.ts';
+import { zielVon } from '#lib/rechnung/rueckstellung.ts';
 
 export type PersonId = 'a' | 'b';
 /** Besitzer eines Postens: eine Person oder beide gemeinsam. */
@@ -106,6 +108,14 @@ export function oeffneDatenbank(pfad: string): DatabaseSync {
 		db.exec(SCHEMA);
 		ergaenzeSpalten(db);
 		legePositionenAn(db);
+		db.exec('BEGIN');
+		try {
+			for (const person of ['a', 'b'] as const) legeAuftraegeAn(db, person);
+			db.exec('COMMIT');
+		} catch (e) {
+			db.exec('ROLLBACK');
+			throw e;
+		}
 		return db;
 	} catch (e) {
 		db.close();
@@ -164,6 +174,36 @@ function legePositionenAn(db: DatabaseSync) {
 		db.exec('ROLLBACK');
 		throw e;
 	}
+}
+
+/**
+ * Einmalig je Person: Standard-Daueraufträge aus Kontenmodell, ETF-Anteil und Rückstellungen anlegen.
+ * Läuft beim Start und nach dem Einspielen einer Sicherung ohne Daueraufträge, jeweils in einer Transaktion des Aufrufers.
+ */
+export function legeAuftraegeAn(db: DatabaseSync, person: 'a' | 'b') {
+	const merker = `auftraege-${person}`;
+	if (db.prepare('SELECT 1 FROM merker WHERE schluessel = ?').get(merker)) return;
+	if (db.prepare('SELECT 1 FROM dauerauftraege WHERE person = ?').get(person)) {
+		db.prepare('INSERT INTO merker (schluessel, wert) VALUES (?, ?)').run(merker, '1');
+		return;
+	}
+	const p = db.prepare('SELECT modus, etf_prozent FROM personen WHERE id = ?').get(person) as { modus: number; etf_prozent: number };
+	const rueckstellungen = (
+		db.prepare('SELECT name, betrag_cent, zielkonto, wkn FROM rueckstellungen WHERE person = ? ORDER BY id').all(person) as {
+			name: string;
+			betrag_cent: number;
+			zielkonto: string | null;
+			wkn: string | null;
+		}[]
+	).map((r) => ({ name: r.name, betragCent: r.betrag_cent, zielkonto: zielVon(r) }));
+	const auftraege = standardAuftraege(p.modus === 2 ? 2 : 1, Number(p.etf_prozent), rueckstellungen);
+	const einf = db.prepare(
+		'INSERT INTO dauerauftraege (person, name, zielkonto, bausteine, rundung, sortierung) VALUES (?, ?, ?, ?, ?, ?)'
+	);
+	auftraege.forEach((a, i) =>
+		einf.run(person, a.name, a.zielkonto, JSON.stringify(a.bausteine), a.rundung ? JSON.stringify(a.rundung) : null, i)
+	);
+	db.prepare('INSERT INTO merker (schluessel, wert) VALUES (?, ?)').run(merker, '1');
 }
 
 /** Der Datenordner fehlt oder ist für den Container nicht beschreibbar. */

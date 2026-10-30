@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db, oeffneDatenbank, setzeDatenbank } from './db';
+import { eindeutigeNamen } from '#lib/rechnung/aufstellung.ts';
 import {
 	aendereGemeinschaft,
 	aendereModus,
@@ -66,8 +67,16 @@ describe('Datenhaltung', () => {
 		]);
 	});
 
-	it('legt Daueraufträge beim ersten Laden aus den Einstellungen an und macht Änderungen rückgängig', () => {
-		aenderePerson('a', { etfProzent: 20 }, 'a', 'ETF');
+	it('legt die Standard-Daueraufträge beim Start an; Laden schreibt nichts', () => {
+		const anzahl = () => (db().prepare('SELECT COUNT(*) AS n FROM dauerauftraege').get() as { n: number }).n;
+		const vorher = anzahl();
+		expect(vorher).toBeGreaterThan(0);
+		db().exec('DELETE FROM dauerauftraege');
+		expect(ladeAuftraege('a')).toEqual([]);
+		expect(anzahl()).toBe(0);
+	});
+
+	it('macht Änderungen an den Daueraufträgen rückgängig', () => {
 		expect(ladeAuftraege('a').map((x) => x.name)).toEqual(['ETF-Sparplan', 'Gemeinschaftskonto', 'Spaßkonto']);
 		const undo = speichereAuftraege('a', [{ name: 'Nur Spaß', zielkonto: 'Spaßkonto', bausteine: [{ typ: 'rest' }] }], 'a');
 		expect(ladeAuftraege('a').map((x) => x.name)).toEqual(['Nur Spaß']);
@@ -128,6 +137,55 @@ describe('Datenhaltung', () => {
 		importiere(JSON.parse(JSON.stringify(sicherung)), 'a');
 		expect(ladePerson('a').name).toBe('Stephan');
 		expect(ladePosten('a')).toMatchObject([{ name: 'iCloud', beteiligungen: [{ name: 'Loreen' }] }]);
+	});
+
+	it('lehnt eine Sicherung mit unbekanntem Baustein ab und ändert nichts', () => {
+		speicherePosten(icloud, 'a');
+		const sicherung = JSON.parse(JSON.stringify(exportiere()));
+		sicherung.posten = [];
+		sicherung.auftraege.a = [{ name: 'Kaputt', zielkonto: 'X', bausteine: [{ typ: 'zaubern' }] }];
+		const vorher = exportiere();
+		expect(() => importiere(sicherung, 'a')).toThrow('ungültige Daueraufträge');
+		expect(exportiere()).toEqual({ ...vorher, erstellt: expect.any(String) });
+		expect(ladePosten('a')).toMatchObject([{ name: 'iCloud' }]);
+	});
+
+	it('erzeugt keine doppelten Namen und spielt die eigene Sicherung wieder ein', () => {
+		// Ältere Sicherung ohne Daueraufträge, mit einer Rücklage, die wie ein Standard-Auftrag heißt.
+		const alt = JSON.parse(JSON.stringify(exportiere()));
+		delete alt.auftraege;
+		alt.rueckstellungen = [{ person: 'a', name: 'Spaßkonto', betragCent: 1000, zielkonto: 'Tagesgeld' }];
+		importiere(alt, 'a');
+		const namen = ladeAuftraege('a').map((x) => x.name);
+		expect(namen).toEqual(['ETF-Sparplan', 'Spaßkonto', 'Gemeinschaftskonto', 'Spaßkonto (2)']);
+
+		// Kontenmodell wechseln, wenn schon ein Auftrag „Fixkosten“ ohne Rate existiert.
+		speichereAuftraege('a', [...ladeAuftraege('a'), { name: 'Fixkosten', zielkonto: 'Tagesgeld', bausteine: [{ typ: 'fest', betragCent: 100 }] }], 'a');
+		aendereModus('a', 2, eindeutigeNamen([{ name: 'Fixkosten', zielkonto: 'Fixkosten-Konto', bausteine: [{ typ: 'fixkosten' }] }, ...ladeAuftraege('a')]), 'a');
+		expect(ladeAuftraege('a').map((x) => x.name)).toContain('Fixkosten (2)');
+
+		const sicherung = JSON.parse(JSON.stringify(exportiere()));
+		setzeDatenbank(oeffneDatenbank(':memory:'));
+		expect(() => importiere(sicherung, 'a')).not.toThrow();
+		expect(ladeAuftraege('a').map((x) => x.name)).toEqual(sicherung.auftraege.a.map((x: { name: string }) => x.name));
+	});
+
+	it('spielt Sicherungen mit doppelten Namen aus älteren Ständen trotzdem ein', () => {
+		const s = JSON.parse(JSON.stringify(exportiere()));
+		s.auftraege.a = [
+			{ name: 'Fixkosten', zielkonto: 'X', bausteine: [{ typ: 'fixkosten' }] },
+			{ name: 'Fixkosten', zielkonto: 'Y', bausteine: [{ typ: 'rest' }] }
+		];
+		importiere(s, 'a');
+		expect(ladeAuftraege('a').map((x) => x.name)).toEqual(['Fixkosten', 'Fixkosten (2)']);
+	});
+
+	it('verwirft unbekannte Symbole beim Import', () => {
+		speicherePosten({ ...icloud, icon: 'wolke' }, 'a');
+		const sicherung = JSON.parse(JSON.stringify(exportiere()));
+		sicherung.posten[0].icon = 'constructor';
+		importiere(sicherung, 'a');
+		expect(ladePosten('a')[0].icon).toBeNull();
 	});
 
 	it('lehnt Dateien ab, die keine Sicherung sind', () => {
