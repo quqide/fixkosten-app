@@ -15,7 +15,17 @@ export function postenAktionen(besitzerVon: (person: PersonId) => Besitzer) {
 			const wer = angemeldet(locals);
 			const ergebnis = lesePosten(await request.formData(), besitzerVon(wer));
 			if ('fehler' in ergebnis) return fail(400, { fehler: ergebnis.fehler });
-			const { undoId, text } = speicherePosten(ergebnis.eintrag, wer);
+			const eintrag = ergebnis.eintrag;
+			const vorher = eintrag.id != null ? ladeEinzelposten(eintrag.id) : null;
+			if (vorher?.actualTerminplan) {
+				// Diese Werte pflegt Actual, die App ändert sie nicht.
+				eintrag.actualTerminplan = vorher.actualTerminplan;
+				eintrag.name = vorher.name;
+				eintrag.betragCent = vorher.betragCent;
+				eintrag.intervallMonate = vorher.intervallMonate;
+				eintrag.buchungsdatum = vorher.buchungsdatum;
+			}
+			const { undoId, text } = speicherePosten(eintrag, wer);
 			return { meldung: `${text}.`, undoId };
 		},
 		loeschen: async ({ request, locals }: RequestEvent) => {

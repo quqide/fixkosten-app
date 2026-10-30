@@ -58,4 +58,43 @@ describe('Abgleich mit den Buchungen', () => {
 		});
 		expect(a.gehalt).toBeNull();
 	});
+
+	it('mit Gehaltskategorie zählt eine große Umbuchung nicht als Gehalt', () => {
+		const a = gleicheAb({
+			buchungen: [
+				{ datum: '2026-10-02', betragCent: 500000, text: 'Umbuchung Tagesgeld', kategorie: null },
+				{ datum: '2026-10-05', betragCent: 345000, text: 'Arbeitgeber', kategorie: 'gehalt' }
+			],
+			nettoCent: 345000,
+			dauerauftraege: auftraege,
+			gehaltKategorie: 'gehalt'
+		});
+		expect(a.gehalt?.text).toBe('Arbeitgeber');
+	});
+
+	it('mit Gehaltskategorie ohne passende Buchung ist kein Gehalt da', () => {
+		const a = gleicheAb({
+			buchungen: [{ datum: '2026-10-02', betragCent: 500000, text: 'Umbuchung', kategorie: null }],
+			nettoCent: 345000,
+			dauerauftraege: auftraege,
+			gehaltKategorie: 'gehalt'
+		});
+		expect(a.gehalt).toBeNull();
+		expect(a.ausstehendCent).toBe(0);
+	});
+
+	it('erkennt Daueraufträge am Terminplan, auch bei anderem Betrag', () => {
+		const a = gleicheAb({
+			buchungen: [
+				gehalt,
+				{ datum: '2026-10-07', betragCent: -120000, text: 'Spaß', terminplan: 'tp-spass' }
+			],
+			nettoCent: 345000,
+			dauerauftraege: auftraege,
+			terminplaene: new Map([['Spaßkonto', 'tp-spass']])
+		});
+		expect(a.auftraege.find((x) => x.name === 'Spaßkonto')?.gebucht?.text).toBe('Spaß');
+		expect(a.ausstehendCent).toBe(69000 + 69600);
+	});
 });
+

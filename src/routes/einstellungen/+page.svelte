@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import Icon from '#lib/components/Icon.svelte';
-	import { betragFeld, zeitpunkt } from '#lib/format.ts';
+	import { betragFeld, eur, intervallText, zeitpunkt } from '#lib/format.ts';
 	import { THEMES } from '#lib/themes.ts';
 	import { mitRueckmeldung, rueckgaengig, toast } from '#lib/toast.svelte.ts';
 	import type { PageProps } from './$types';
@@ -28,6 +28,16 @@
 		{ wert: 'light', name: 'Hell' },
 		{ wert: 'dark', name: 'Dunkel' }
 	];
+
+	const z = $derived(data.zuordnung);
+
+	function rhythmus(t: { rhythmus: { frequenz: string; intervall: number } | null }) {
+		if (!t.rhythmus) return 'ohne Rhythmus';
+		const n = t.rhythmus.intervall;
+		if (t.rhythmus.frequenz === 'monthly') return intervallText(n);
+		if (t.rhythmus.frequenz === 'yearly') return intervallText(12 * n);
+		return t.rhythmus.frequenz === 'weekly' ? 'wöchentlich' : 'täglich';
+	}
 
 	async function verlaufRueckgaengig(id: number) {
 		toast.undoId = id;
@@ -122,7 +132,7 @@
 </form>
 
 <div class="section">
-	<div class="section-head"><h2>Kontostand aus Actual Budget</h2><span class="aside">freiwillig</span></div>
+	<div class="section-head" id="actual"><h2>Actual Budget</h2><span class="aside">freiwillig</span></div>
 	<div class="card">
 		{#if !data.actual}
 			<div class="field">
@@ -156,9 +166,79 @@ ACTUAL_{p.id.toUpperCase()}_SYNC_ID=Sync-ID aus Actual (Einstellungen → Erweit
 					{/if}
 				{/await}
 			</form>
+			{#if p.actualKontoId}
+				<form class="field abruf" method="POST" action="?/actualAbruf" use:enhance={mitRueckmeldung()}>
+					<span class="label">Abgleich</span>
+					<span class="help">
+						{z ? `Zuletzt abgerufen ${zeitpunkt(z.zeit)}.` : 'Noch nichts abgerufen.'}
+						Fixkosten, Beträge und Termine kommen aus den Terminplänen in Actual.
+					</span>
+					{#if fehlerIn('actual').actual}<span class="error">{fehlerIn('actual').actual}</span>{/if}
+					<button class="secondary" type="submit">Jetzt abrufen</button>
+				</form>
+				{#if z}
+					<form class="field" method="POST" action="?/gehaltKategorie" use:enhance={mitRueckmeldung()}>
+						<label for="gehalt">Woran erkennt die App dein Gehalt?</label>
+						<select id="gehalt" name="kategorie" onchange={(e) => e.currentTarget.form?.requestSubmit()} aria-describedby="gehalt-h">
+							<option value="" selected={!p.actualGehaltKategorie}>Am Betrag (ab 70 % vom Netto)</option>
+							{#each z.einnahmeKategorien as k (k.id)}
+								<option value={k.id} selected={p.actualGehaltKategorie === k.id}>Kategorie „{k.name}“</option>
+							{/each}
+						</select>
+						<span class="help" id="gehalt-h">Mit Kategorie zählen große Umbuchungen nicht als Gehalt.</span>
+						<noscript><button class="secondary" type="submit">Übernehmen</button></noscript>
+					</form>
+				{/if}
+			{/if}
 		{/if}
 	</div>
 </div>
+
+{#if data.warnungen.length}
+	<div class="section">
+		<div class="section-head"><h2>Prüfung der Einrichtung</h2><span class="aside">{data.warnungen.length} {data.warnungen.length === 1 ? 'Punkt' : 'Punkte'}</span></div>
+		<div class="card"><ul class="rows">
+			{#each data.warnungen as w, i (i)}
+				<li><div class="row warnung">
+					<span class="stufe {w.stufe}" aria-label={w.stufe === 'warnung' ? 'Warnung' : 'Hinweis'}>{w.stufe === 'warnung' ? '!' : 'i'}</span>
+					<span class="main"><span class="title">{w.text}</span><span class="detail">{w.tun}</span></span>
+				</div></li>
+			{/each}
+		</ul></div>
+		<p class="note">Die App ändert nichts in Actual. Nach einer Korrektur dort einfach neu abrufen.</p>
+	</div>
+{/if}
+
+{#if z && z.terminplaene.length}
+	<form class="section" method="POST" action="?/zuordnung" use:enhance={mitRueckmeldung()}>
+		<div class="section-head"><h2>Terminpläne zuordnen</h2><span class="aside">aus Actual</span></div>
+		<div class="card">
+			<ul class="rows">
+				{#each z.terminplaene as t (t.id)}
+					{@const wahl = t.wahl}
+					<li><div class="row zuordnung">
+						<span class="main">
+							<span class="title">{t.name}{#if !t.rolle}<span class="neu">neu</span>{/if}</span>
+							<span class="detail">{eur(t.betragCent)} · {rhythmus(t)}{t.kontoId !== p.actualKontoId ? ` · ${t.kontoName}` : ''}{t.umbuchung ? ' · Umbuchung' : ''}</span>
+						</span>
+						<select name="rolle_{t.id}" aria-label="Rolle von {t.name}">
+							<option value="fixkosten" selected={wahl === 'fixkosten'}>Fixkosten</option>
+							{#each z.freiePosten as fp (fp.id)}
+								<option value="fixkosten:{fp.id}" selected={wahl === `fixkosten:${fp.id}`}>Fixkosten, verknüpft mit „{fp.name}“</option>
+							{/each}
+							{#each z.dauerauftraege as d (d)}
+								<option value="dauerauftrag:{d}" selected={wahl === `dauerauftrag:${d}`}>Dauerauftrag {d}</option>
+							{/each}
+							<option value="ignorieren" selected={wahl === 'ignorieren'}>Nicht berücksichtigen</option>
+						</select>
+					</div></li>
+				{/each}
+			</ul>
+			<div class="field"><button class="primary" type="submit">Zuordnung speichern</button></div>
+		</div>
+		<p class="note">Fixkosten übernimmt die App mit Name, Betrag und Rhythmus aus Actual. Von Hand angelegte Posten mit gleichem Namen werden vorgeschlagen, damit nichts doppelt entsteht.</p>
+	</form>
+{/if}
 
 <div class="section">
 	<div class="section-head"><h2>Deine Daten</h2></div>
@@ -206,6 +286,15 @@ ACTUAL_{p.id.toUpperCase()}_SYNC_ID=Sync-ID aus Actual (Einstellungen → Erweit
 	.entfernen { justify-self: start; color: var(--warm); }
 	.buttons { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; }
 	.help-text { margin: 0; color: var(--secondary); }
+	.abruf .secondary { justify-self: start; }
+	.stufe { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; flex: none; }
+	.stufe.warnung { background: var(--warm-soft); color: var(--warm); }
+	.stufe.hinweis { background: var(--calm-soft); color: var(--calm); }
+	.warnung .title { font-weight: 600; }
+	.zuordnung { flex-wrap: wrap; }
+	.zuordnung .main { flex: 1 1 200px; }
+	.zuordnung select { flex: 1 1 220px; max-width: 100%; font-size: 15px; background: var(--fill); border: 2px solid transparent; border-radius: 10px; padding: 8px 10px; min-height: 44px; color: var(--label); }
+	.neu { font-size: 12px; font-weight: 700; color: var(--tint); background: var(--tint-soft); border-radius: 999px; padding: 1px 8px; margin-left: 8px; vertical-align: 2px; }
 	.einrichten summary { cursor: pointer; color: var(--tint); font-weight: 600; min-height: 44px; display: flex; align-items: center; }
 	.einrichten pre { background: var(--fill); border-radius: 10px; padding: 12px; font-size: 13px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; margin: 8px 0; }
 	.swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }

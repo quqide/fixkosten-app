@@ -60,6 +60,18 @@ CREATE TABLE IF NOT EXISTS aenderungen (
 	text TEXT NOT NULL,
 	rueckgaengig TEXT
 );
+CREATE TABLE IF NOT EXISTS actual_stand (
+	person TEXT PRIMARY KEY CHECK (person IN ('a', 'b')),
+	zeit TEXT NOT NULL,
+	daten TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS actual_zuordnung (
+	person TEXT NOT NULL CHECK (person IN ('a', 'b')),
+	terminplan TEXT NOT NULL,
+	rolle TEXT NOT NULL CHECK (rolle IN ('fixkosten', 'dauerauftrag', 'ignorieren')),
+	dauerauftrag TEXT,
+	PRIMARY KEY (person, terminplan)
+);
 INSERT OR IGNORE INTO personen (id, name, ueberweisungstag) VALUES ('a', 'Person 1', 7), ('b', 'Person 2', 7);
 INSERT OR IGNORE INTO gemeinschaft (id) VALUES (1);
 `;
@@ -77,7 +89,9 @@ const NEUE_SPALTEN: [tabelle: string, spalte: string, definition: string][] = [
 	['personen', 'ist_quelle', "TEXT NOT NULL DEFAULT 'hand'"],
 	['personen', 'abgleich', 'TEXT'],
 	['personen', 'actual_konto_id', 'TEXT'],
-	['personen', 'actual_konto_name', 'TEXT']
+	['personen', 'actual_konto_name', 'TEXT'],
+	['personen', 'actual_gehalt_kategorie', 'TEXT'],
+	['posten', 'actual_terminplan', 'TEXT']
 ];
 
 function ergaenzeSpalten(db: DatabaseSync) {

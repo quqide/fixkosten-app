@@ -24,6 +24,8 @@ export interface Person {
 	abgleich: Abgleich | null;
 	actualKontoId: string | null;
 	actualKontoName: string | null;
+	/** Kategorie in Actual, in die das Gehalt gebucht wird. */
+	actualGehaltKategorie: string | null;
 	theme: string;
 	hell: Hell;
 }
@@ -36,6 +38,8 @@ export interface PostenEintrag extends FixkostenPosten {
 	id?: number;
 	besitzer: Besitzer;
 	beteiligungen: GespeicherteBeteiligung[];
+	/** Terminplan in Actual, aus dem Name, Betrag, Intervall und Datum kommen. */
+	actualTerminplan?: string | null;
 }
 
 export interface RueckstellungEintrag {
@@ -101,6 +105,7 @@ function zuPerson(z: Zeile): Person {
 		abgleich: z.abgleich ? (JSON.parse(z.abgleich as string) as Abgleich) : null,
 		actualKontoId: (z.actual_konto_id as string | null) ?? null,
 		actualKontoName: (z.actual_konto_name as string | null) ?? null,
+		actualGehaltKategorie: (z.actual_gehalt_kategorie as string | null) ?? null,
 		theme: z.theme as string,
 		hell: z.hell as Hell
 	};
@@ -119,7 +124,7 @@ function schreibePerson(p: Person) {
 		.prepare(
 			`UPDATE personen SET name = ?, netto_cent = ?, etf_prozent = ?, ueberweisungstag = ?, modus = ?,
 			puffer_cent = ?, ist_cent = ?, ist_datum = ?, ist_ausstehend = ?, ist_quelle = ?, abgleich = ?,
-			actual_konto_id = ?, actual_konto_name = ?, theme = ?, hell = ? WHERE id = ?`
+			actual_konto_id = ?, actual_konto_name = ?, actual_gehalt_kategorie = ?, theme = ?, hell = ? WHERE id = ?`
 		)
 		.run(
 			p.name,
@@ -135,6 +140,7 @@ function schreibePerson(p: Person) {
 			p.abgleich ? JSON.stringify(p.abgleich) : null,
 			p.actualKontoId ?? null,
 			p.actualKontoName ?? null,
+			p.actualGehaltKategorie ?? null,
 			p.theme,
 			p.hell,
 			p.id
@@ -177,6 +183,7 @@ function zuPosten(z: Zeile): PostenEintrag {
 		art: (z.art as Art | null) ?? null,
 		abbuchungsart: (z.abbuchungsart as Abbuchungsart | null) ?? null,
 		buchungsdatum: (z.buchungsdatum as string | null) ?? null,
+		actualTerminplan: (z.actual_terminplan as string | null) ?? null,
 		beteiligungen: ladeBeteiligungen(Number(z.id))
 	};
 }
@@ -202,7 +209,8 @@ function schreibePosten(p: PostenEintrag, id?: number): number {
 		p.betragCent,
 		p.art ?? null,
 		p.abbuchungsart ?? null,
-		p.buchungsdatum ?? null
+		p.buchungsdatum ?? null,
+		p.actualTerminplan ?? null
 	] as const;
 	let postenId: number;
 	if (id != null) {
@@ -211,14 +219,14 @@ function schreibePosten(p: PostenEintrag, id?: number): number {
 			db()
 				.prepare(
 					`UPDATE posten SET besitzer = ?, name = ?, intervall = ?, betrag_cent = ?, art = ?, abbuchungsart = ?,
-					buchungsdatum = ? WHERE id = ?`
+					buchungsdatum = ?, actual_terminplan = ? WHERE id = ?`
 				)
 				.run(...werte, id);
 		} else {
 			db()
 				.prepare(
-					`INSERT INTO posten (besitzer, name, intervall, betrag_cent, art, abbuchungsart, buchungsdatum, id)
-					VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+					`INSERT INTO posten (besitzer, name, intervall, betrag_cent, art, abbuchungsart, buchungsdatum,
+					actual_terminplan, id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 				)
 				.run(...werte, id);
 		}
@@ -226,8 +234,8 @@ function schreibePosten(p: PostenEintrag, id?: number): number {
 	} else {
 		const r = db()
 			.prepare(
-				`INSERT INTO posten (besitzer, name, intervall, betrag_cent, art, abbuchungsart, buchungsdatum)
-				VALUES (?, ?, ?, ?, ?, ?, ?)`
+				`INSERT INTO posten (besitzer, name, intervall, betrag_cent, art, abbuchungsart, buchungsdatum,
+				actual_terminplan) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 			)
 			.run(...werte);
 		postenId = Number(r.lastInsertRowid);
@@ -265,6 +273,69 @@ export function loeschePosten(id: number, wer: PersonId) {
 
 function bereichVon(besitzer: Besitzer) {
 	return besitzer === 'gemeinsam' ? 'gemeinsam' : `fixkosten-${besitzer}`;
+}
+
+/**
+ * Übernimmt Werte aus Actual in einen Posten (neu oder vorhanden). Im Verlauf steht es,
+ * rückgängig machen lässt es sich nicht, weil der nächste Abruf es wiederherstellen würde.
+ */
+export function uebernehmePosten(p: PostenEintrag, wer: PersonId, text: string | null) {
+	return inTransaktion(() => {
+		const id = schreibePosten(p, p.id);
+		if (text) protokolliere(wer, bereichVon(p.besitzer), text, null);
+		return id;
+	});
+}
+
+export function ladePostenZuTerminplan(besitzer: Besitzer, terminplan: string): PostenEintrag | null {
+	const z = db()
+		.prepare('SELECT * FROM posten WHERE besitzer = ? AND actual_terminplan = ?')
+		.get(besitzer, terminplan) as Zeile | undefined;
+	return z ? zuPosten(z) : null;
+}
+
+export function setzeTerminplan(postenId: number, terminplan: string | null) {
+	db().prepare('UPDATE posten SET actual_terminplan = ? WHERE id = ?').run(terminplan, postenId);
+}
+
+// ---------- Actual: Abruf und Zuordnung ----------
+
+export function speichereActualStand(person: PersonId, daten: unknown) {
+	db()
+		.prepare('INSERT OR REPLACE INTO actual_stand (person, zeit, daten) VALUES (?, ?, ?)')
+		.run(person, new Date().toISOString(), JSON.stringify(daten));
+}
+
+export function ladeActualStand<T>(person: PersonId): { zeit: string; daten: T } | null {
+	const z = db().prepare('SELECT * FROM actual_stand WHERE person = ?').get(person) as Zeile | undefined;
+	return z ? { zeit: z.zeit as string, daten: JSON.parse(z.daten as string) as T } : null;
+}
+
+export interface ZuordnungEintrag {
+	terminplan: string;
+	rolle: 'fixkosten' | 'dauerauftrag' | 'ignorieren';
+	dauerauftrag: string | null;
+}
+
+export function ladeZuordnung(person: PersonId): ZuordnungEintrag[] {
+	return (
+		db().prepare('SELECT * FROM actual_zuordnung WHERE person = ?').all(person) as Zeile[]
+	).map((z) => ({
+		terminplan: z.terminplan as string,
+		rolle: z.rolle as ZuordnungEintrag['rolle'],
+		dauerauftrag: (z.dauerauftrag as string | null) ?? null
+	}));
+}
+
+export function speichereZuordnung(person: PersonId, liste: ZuordnungEintrag[], wer: PersonId) {
+	inTransaktion(() => {
+		db().prepare('DELETE FROM actual_zuordnung WHERE person = ?').run(person);
+		const einf = db().prepare(
+			'INSERT INTO actual_zuordnung (person, terminplan, rolle, dauerauftrag) VALUES (?, ?, ?, ?)'
+		);
+		for (const z of liste) einf.run(person, z.terminplan, z.rolle, z.dauerauftrag);
+		protokolliere(wer, `person-${person}`, 'Terminpläne aus Actual zugeordnet', null);
+	});
 }
 
 // ---------- Rückstellungen ----------
@@ -326,10 +397,10 @@ export function aendereGemeinschaft(teil: Partial<GemeinschaftEintrag>, wer: Per
 
 // ---------- Protokoll und Rückgängig ----------
 
-function protokolliere(wer: PersonId, bereich: string, text: string, rueckgaengig: Rueckgaengig): number {
+function protokolliere(wer: PersonId, bereich: string, text: string, rueckgaengig: Rueckgaengig | null): number {
 	const r = db()
 		.prepare('INSERT INTO aenderungen (zeit, person, bereich, text, rueckgaengig) VALUES (?, ?, ?, ?, ?)')
-		.run(new Date().toISOString(), wer, bereich, text, JSON.stringify(rueckgaengig));
+		.run(new Date().toISOString(), wer, bereich, text, rueckgaengig ? JSON.stringify(rueckgaengig) : null);
 	// Nur die letzten 200 Einträge behalten.
 	db().exec('DELETE FROM aenderungen WHERE id <= (SELECT MAX(id) - 200 FROM aenderungen)');
 	return Number(r.lastInsertRowid);

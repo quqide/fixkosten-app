@@ -136,6 +136,9 @@
 						Kontostand kommt aus Actual ({p.actualKontoName}).
 					{/if}
 				</div>
+				{#if data.warnungen}
+					<a class="warnhinweis" href="/einstellungen#actual">{data.warnungen === 1 ? 'Eine Warnung' : `${data.warnungen} Warnungen`} zur Einrichtung in Actual</a>
+				{/if}
 				<button class="secondary" type="submit" disabled={actualLaeuft}>{actualLaeuft ? 'Lädt …' : 'Neu abrufen'}</button>
 			</form>
 		{/if}
@@ -256,6 +259,7 @@
 	.actual { border-top: 1px solid var(--separator); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; padding: 14px 22px; }
 	.actual-text { display: grid; gap: 2px; font-size: 14px; color: var(--secondary); flex: 1 1 260px; }
 	.actual .secondary { min-height: 40px; }
+	.warnhinweis { font-size: 14px; font-weight: 600; color: var(--warm); flex-basis: 100%; order: 3; }
 	.kontostand .field + .field { border-top: 0; padding-top: 0; }
 	details.explain { border-top: 1px solid var(--separator); }
 	summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; padding: 14px 22px; color: var(--tint); font-weight: 600; font-size: 15px; min-height: 48px; }
