@@ -4,7 +4,7 @@ import { eindeutigeNamen, type AuftragKonfig, type Baustein, type Kontenmodus } 
 import type { Rundung } from '#lib/rechnung/rundung.ts';
 import type { Abgleich } from '#lib/rechnung/abgleich.ts';
 import { type RueckstellungKonfig, type RueckstellungsArt } from '#lib/rechnung/rueckstellung.ts';
-import { db, legeAuftraegeAn, type Besitzer, type PersonId } from './db.ts';
+import { db, legeAuftraegeAn, transaktion, type Besitzer, type PersonId } from './db.ts';
 import { pruefeAuftraege } from './formular.ts';
 import { istPostenIcon } from '#lib/postenIcons.ts';
 import { AUSBLENDBARE_ARTEN, type WarnungArt } from '#lib/rechnung/terminplan.ts';
@@ -105,18 +105,7 @@ type Rueckgaengig =
 
 type Zeile = Record<string, unknown>;
 
-function inTransaktion<T>(fn: () => T): T {
-	const d = db();
-	d.exec('BEGIN');
-	try {
-		const ergebnis = fn();
-		d.exec('COMMIT');
-		return ergebnis;
-	} catch (e) {
-		d.exec('ROLLBACK');
-		throw e;
-	}
-}
+const inTransaktion = <T>(fn: () => T): T => transaktion(db(), fn);
 
 // ---------- Personen ----------
 
@@ -628,8 +617,19 @@ function zuAenderung(z: Zeile): Aenderung {
 		person: z.person as PersonId,
 		bereich: z.bereich as string,
 		text: z.text as string,
-		kannRueckgaengig: z.rueckgaengig != null
+		kannRueckgaengig: z.rueckgaengig != null && nochAnwendbar(JSON.parse(z.rueckgaengig as string) as Rueckgaengig, z.text as string)
 	};
+}
+
+/**
+ * Einträge aus älteren Versionen, die sich nicht mehr sinnvoll anwenden lassen: Gemeinschaft ohne Positionen
+ * (erste Version) und Kontenmodell-Wechsel, die damals als zwei getrennte Einträge gespeichert wurden.
+ */
+function nochAnwendbar(r: Rueckgaengig, text: string): boolean {
+	if (r.typ === 'gemeinschaft') return Array.isArray(r.vorher.positionen);
+	if (r.typ === 'person') return text !== 'Kontenmodell geändert';
+	if (r.typ === 'auftraege') return text !== 'Daueraufträge an Kontenmodell angepasst';
+	return true;
 }
 
 /** Der Eintrag ist zu alt, um ihn noch anzuwenden; er bleibt im Verlauf offen. */
@@ -645,6 +645,8 @@ export function macheRueckgaengig(id: number, wer: PersonId): string | null {
 		const z = db().prepare('SELECT * FROM aenderungen WHERE id = ?').get(id) as Zeile | undefined;
 		if (!z || z.rueckgaengig == null) return null;
 		const r = JSON.parse(z.rueckgaengig as string) as Rueckgaengig;
+		// Der Eintrag bleibt im Verlauf offen, damit nichts still verloren geht.
+		if (!nochAnwendbar(r, z.text as string)) throw new NichtMehrRueckgaengig();
 		switch (r.typ) {
 			case 'posten':
 				if (r.vorher) schreibePosten(r.vorher, r.id);
@@ -654,15 +656,14 @@ export function macheRueckgaengig(id: number, wer: PersonId): string | null {
 				schreibePerson(r.vorher);
 				break;
 			case 'gemeinschaft':
-				// Einträge aus der ersten Version (ohne Positionen) lassen sich nicht mehr anwenden.
-				if (!Array.isArray(r.vorher.positionen)) throw new NichtMehrRueckgaengig();
 				schreibeGemeinschaft(r.vorher);
 				break;
 			case 'auftraege':
 				schreibeAuftraege(r.person, r.vorher);
 				break;
 			case 'modus':
-				schreibePerson(r.vorher);
+				// Nur das Kontenmodell zurück; Netto, Kontostand usw. können sich inzwischen geändert haben.
+				schreibePerson({ ...ladePerson(r.vorher.id), modus: r.vorher.modus });
 				schreibeAuftraege(r.vorher.id, r.auftraege);
 				break;
 			case 'rueckstellungen':
@@ -713,11 +714,21 @@ export function importiere(s: Sicherung, wer: PersonId) {
 	}
 	// Erst alles prüfen, dann schreiben: eine ungültige Sicherung ändert nichts.
 	const auftraege: Partial<Record<PersonId, AuftragKonfig[]>> = {};
+	const umbenannt: string[] = [];
 	for (const id of ['a', 'b'] as const) {
 		const liste = s.auftraege?.[id];
 		if (liste == null) continue;
 		// Ältere Stände konnten doppelte Namen erzeugen; die eigene Sicherung soll trotzdem wiederherstellbar sein.
-		const ergebnis = pruefeAuftraege(Array.isArray(liste) ? eindeutigeNamen(liste.map((a) => ({ ...a, name: String(a?.name ?? '') }))) : liste);
+		// Nur echte Texte umbenennen, alles andere fängt die Prüfung ab.
+		const eindeutig =
+			Array.isArray(liste) && liste.every((a) => typeof a?.name === 'string') ? eindeutigeNamen(liste) : liste;
+		if (Array.isArray(eindeutig)) {
+			eindeutig.forEach((a, i) => {
+				if (a.name !== (liste as AuftragKonfig[])[i].name) umbenannt.push(`„${(liste as AuftragKonfig[])[i].name.trim()}“ → „${a.name}“`);
+			});
+		}
+		const wkns = (s.rueckstellungen ?? []).flatMap((r) => (r?.person === id && typeof r.wkn === 'string' && r.wkn ? [r.wkn] : []));
+		const ergebnis = pruefeAuftraege(eindeutig, wkns);
 		if ('fehler' in ergebnis) {
 			const name = s.personen.find((p) => p?.id === id)?.name ?? id;
 			throw new Error(`Die Sicherung enthält ungültige Daueraufträge von ${name}: ${Object.values(ergebnis.fehler)[0]}`);
@@ -766,4 +777,6 @@ export function importiere(s: Sicherung, wer: PersonId) {
 			.prepare('INSERT INTO aenderungen (zeit, person, bereich, text) VALUES (?, ?, ?, ?)')
 			.run(new Date().toISOString(), wer, 'system', 'Sicherung eingespielt');
 	});
+	/** Daueraufträge, die wegen doppelter Namen einen Zusatz bekommen haben. */
+	return { umbenannt };
 }

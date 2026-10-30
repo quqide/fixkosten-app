@@ -2,6 +2,7 @@ import { gleicheAb } from '#lib/rechnung/abgleich.ts';
 import { heute } from '#lib/rechnung/datum.ts';
 import {
 	alsPosten,
+	hinweisSchluessel,
 	istAusblendbar,
 	pruefeTerminplaene,
 	schlageRolleVor,
@@ -9,7 +10,7 @@ import {
 	type Terminplan,
 	type Warnung
 } from '#lib/rechnung/terminplan.ts';
-import { ladeAbgleich, type ActualDaten } from './actual.ts';
+import { actualEingerichtet, ladeAbgleich, type ActualDaten } from './actual.ts';
 import { personAnsicht } from './ansicht.ts';
 import type { PersonId } from './db.ts';
 import {
@@ -97,12 +98,14 @@ export async function holeAusActual(person: PersonId) {
 	return { geaendert };
 }
 
-const schluessel = (terminplan: string, art: string) => `${terminplan}|${art}`;
-
-/** Warnungen zur Einrichtung in Actual, aus dem letzten Abruf, ohne ausgeblendete Hinweise. */
+/**
+ * Warnungen zur Einrichtung in Actual, aus dem letzten Abruf, ohne ausgeblendete Hinweise.
+ * Ohne eingerichtetes Actual keine: ein alter Abruf zählt dann nicht mehr.
+ */
 export function warnungenFuer(person: PersonId): Warnung[] {
-	const aus = new Set(ladeAusblendungen(person).map((h) => schluessel(h.terminplan, h.art)));
-	return alleWarnungen(person).filter((w) => !(istAusblendbar(w) && aus.has(schluessel(w.terminplanId!, w.art))));
+	if (!actualEingerichtet(person)) return [];
+	const aus = new Set(ladeAusblendungen(person).map((h) => hinweisSchluessel(h.terminplan, h.art)));
+	return alleWarnungen(person).filter((w) => !(istAusblendbar(w) && aus.has(hinweisSchluessel(w.terminplanId!, w.art))));
 }
 
 /** Die ausgeblendeten Hinweise mit der Meldung, falls sie gerade noch zutrifft. */

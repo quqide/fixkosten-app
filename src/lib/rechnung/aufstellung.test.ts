@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { berechneAufstellung, standardAuftraege, type AufstellungEingaben, type Kontenmodus } from './aufstellung';
+import { auftraegeFuerModus, berechneAufstellung, standardAuftraege, type AufstellungEingaben, type Kontenmodus } from './aufstellung';
 
 const rueckstellungen = [
 	{ name: 'Urlaub', betragCent: 0, zielkonto: 'Tagesgeld' },
@@ -93,5 +93,25 @@ describe('Monatsaufstellung', () => {
 			'Im Modell „Eigenes Fixkosten-Konto“ fehlt der Dauerauftrag mit der Fixkosten-Rate.',
 			'Die Rücklage „Schlussrate Mazda 6e“ (Ziel Tagesgeld) überweist kein Dauerauftrag.'
 		]);
+	});
+});
+
+describe('Daueraufträge beim Wechsel des Kontenmodells', () => {
+	const eigene = [
+		{ name: 'Fixkosten', zielkonto: 'Tagesgeld', bausteine: [{ typ: 'fest' as const, betragCent: 100 }] },
+		{ name: 'Spaßkonto', zielkonto: 'Spaßkonto', bausteine: [{ typ: 'rest' as const }] }
+	];
+
+	it('Modell 2: neuer Auftrag mit der Rate, bestehende Namen bleiben', () => {
+		const liste = auftraegeFuerModus(eigene, 2);
+		expect(liste.map((a) => a.name)).toEqual(['Fixkosten (2)', 'Fixkosten', 'Spaßkonto']);
+		expect(liste[0].bausteine).toEqual([{ typ: 'fixkosten' }]);
+		// Hat schon ein Auftrag die Rate, bleibt alles, wie es ist.
+		expect(auftraegeFuerModus(liste, 2)).toEqual(liste);
+	});
+
+	it('Modell 1: Rate entfernen, Rest fürs Spaßkonto ergänzen', () => {
+		const liste = auftraegeFuerModus([{ name: 'Fixkosten', zielkonto: 'Fixkosten-Konto', bausteine: [{ typ: 'fixkosten' }] }], 1);
+		expect(liste).toEqual([{ name: 'Spaßkonto', zielkonto: 'Spaßkonto', bausteine: [{ typ: 'rest' }], rundung: { schritt: 100, richtung: 'ab' } }]);
 	});
 });

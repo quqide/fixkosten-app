@@ -1,9 +1,9 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mitMeldungen, type Terminplan } from '#lib/rechnung/terminplan.ts';
 import { ausgeblendeteHinweise, warnungenFuer } from './actualAbgleich';
 import { hinweisAktionen } from './aktionen';
 import { oeffneDatenbank, setzeDatenbank } from './db';
-import { aenderePerson, ladeAusblendungen, macheRueckgaengig, speichereActualStand, speichereZuordnung } from './repo';
+import { aenderePerson, ladeAusblendungen, letzteAenderungen, macheRueckgaengig, speichereActualStand, speichereZuordnung } from './repo';
 
 const plan = (id: string, extra: Partial<Terminplan> = {}): Terminplan => ({
 	id,
@@ -28,7 +28,15 @@ function anfrage(person: 'a' | 'b', hinweis: string) {
 	return { request: new Request('http://x/', { method: 'POST', body: f }), locals: { person } } as never;
 }
 
+afterEach(() => vi.unstubAllEnvs());
+
 beforeEach(() => {
+	// Nur Platzhalter, damit „Actual eingerichtet“ gilt; es wird nichts abgerufen.
+	for (const p of ['A', 'B']) {
+		vi.stubEnv(`ACTUAL_${p}_URL`, 'http://actual.invalid');
+		vi.stubEnv(`ACTUAL_${p}_PASSWORD`, 'test');
+		vi.stubEnv(`ACTUAL_${p}_SYNC_ID`, 'test');
+	}
 	setzeDatenbank(oeffneDatenbank(':memory:'));
 	for (const id of ['a', 'b'] as const) {
 		aenderePerson(id, { actualKontoId: 'giro', actualKontoName: 'Giro', actualGehaltKategorie: null } as never, id, 'x');
@@ -84,5 +92,27 @@ describe('Hinweise ausblenden', () => {
 		expect(r.status).toBe(400);
 		expect(ladeAusblendungen('a')).toEqual([]);
 		expect(arten('a')).toContain('teuer|preisabweichung');
+	});
+
+	it('zweites Ausblenden ist kein Fehler und schreibt nichts Neues', async () => {
+		await hinweisAktionen.ausblenden(anfrage('a', 'strom|ungefaehr'));
+		const vorher = letzteAenderungen(50).length;
+		const r = (await hinweisAktionen.ausblenden(anfrage('a', 'strom|ungefaehr'))) as { meldung: string; status?: number };
+		expect(r.status).toBeUndefined();
+		expect(r.meldung).toMatch(/schon ausgeblendet/);
+		expect(letzteAenderungen(50).length).toBe(vorher);
+	});
+
+	it('Einblenden ohne Ausblendung wird abgelehnt', async () => {
+		const vorher = letzteAenderungen(50).length;
+		const r = (await hinweisAktionen.einblenden(anfrage('a', 'strom|ungefaehr'))) as { status: number; data: { fehler: { allgemein: string } } };
+		expect(r.status).toBe(400);
+		expect(r.data.fehler.allgemein).toBe('Dieser Hinweis ist nicht ausgeblendet.');
+		expect(letzteAenderungen(50).length).toBe(vorher);
+	});
+
+	it('ohne eingerichtetes Actual gibt es keine Meldungen aus dem alten Abruf', () => {
+		vi.unstubAllEnvs();
+		expect(warnungenFuer('a')).toEqual([]);
 	});
 });

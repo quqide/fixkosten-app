@@ -8,7 +8,7 @@
 	import { heute } from '#lib/rechnung/datum.ts';
 	import Icon from './Icon.svelte';
 	import PostenSymbol from './PostenSymbol.svelte';
-	import { istAusblendbar, type Warnung } from '#lib/rechnung/terminplan.ts';
+	import { hinweisSchluessel, istAusblendbar, type Warnung } from '#lib/rechnung/terminplan.ts';
 	import { POSTEN_ICONS, schlageIconVor, type PostenIcon } from '#lib/postenIcons.ts';
 
 	type Posten = FixkostenPosten & { id?: number; actualTerminplan?: string | null; meldungen?: Warnung[] };
@@ -73,14 +73,14 @@
 			<div class="sheet-body">
 				{#if posten.id != null}<input type="hidden" name="id" value={posten.id} />{/if}
 				{#if posten.meldungen?.length}
-					<div class="card meldungen" aria-label="Meldungen aus Actual">
+					<div class="card meldungen" role="group" aria-label="Meldungen aus Actual">
 						<ul class="rows">
 							{#each posten.meldungen as m, i (i)}
 								<li><div class="row">
-									<span class="stufe {m.stufe}" aria-label={m.stufe === 'warnung' ? 'Warnung' : 'Hinweis'}>{m.stufe === 'warnung' ? '!' : 'i'}</span>
+									<span class="stufe {m.stufe}" role="img" aria-label={m.stufe === 'warnung' ? 'Warnung' : 'Hinweis'}>{m.stufe === 'warnung' ? '!' : 'i'}</span>
 									<span class="main"><span class="title">{m.text}</span><span class="detail">{m.tun}</span>
 										{#if istAusblendbar(m)}
-											<button type="submit" class="textlink ausblenden" form="posten-hinweis" name="hinweis" value="{m.terminplanId}|{m.art}">Nicht mehr anzeigen</button>
+											<button type="submit" class="textlink ausblenden" form="posten-hinweis" name="hinweis" value={hinweisSchluessel(m.terminplanId!, m.art)}>Nicht mehr anzeigen</button>
 										{/if}
 									</span>
 								</div></li>

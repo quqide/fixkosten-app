@@ -66,6 +66,7 @@ export const STANDARD_REST_RUNDUNG: Rundung = { schritt: 100, richtung: 'ab' };
 const ETF_RUNDUNG: Rundung = { schritt: 100, richtung: 'kaufm' };
 
 const istRest = (a: AuftragKonfig) => a.bausteine.some((b) => b.typ === 'rest');
+/** Ziel der Rücklage. Die Aufrufer setzen zielkonto schon mit zielVon (WKN vor Konto) aus rueckstellung.ts. */
 const ziel = (r: Rueckstellung) => (r.zielkonto ?? '').trim();
 /** Ziele vergleichen ohne Rücksicht auf Groß- und Kleinschreibung, z. B. WKN „a0rpwh“ und „A0RPWH“. */
 const gleichesZiel = (a: string, b: string) => a.trim().toLocaleUpperCase('de-DE') === b.trim().toLocaleUpperCase('de-DE');
@@ -84,6 +85,34 @@ export function eindeutigeNamen<T extends { name: string }>(liste: T[]): T[] {
 		vergeben.add(schluessel(name));
 		return name === a.name ? a : { ...a, name };
 	});
+}
+
+/** Ein Name, den es in der Liste noch nicht gibt: „Fixkosten“, sonst „Fixkosten (2)“ usw. */
+function freierName(name: string, liste: { name: string }[]): string {
+	const vergeben = new Set(liste.map((a) => a.name.trim().toLocaleLowerCase('de-DE')));
+	let kandidat = name;
+	for (let n = 2; vergeben.has(kandidat.toLocaleLowerCase('de-DE')); n++) kandidat = `${name} (${n})`;
+	return kandidat;
+}
+
+/**
+ * Passt die Daueraufträge an ein neues Kontenmodell an: Modell 2 braucht die Fixkosten-Rate,
+ * Modell 1 keine Rate, aber einen Rest fürs Spaßkonto. Bestehende Namen bleiben, nur neue
+ * Aufträge bekommen bei Bedarf einen Zusatz wie „(2)“.
+ */
+export function auftraegeFuerModus(auftraege: AuftragKonfig[], modus: Kontenmodus): AuftragKonfig[] {
+	const hatRate = (a: AuftragKonfig) => a.bausteine.some((b) => b.typ === 'fixkosten');
+	let liste = auftraege;
+	if (modus === 2 && !liste.some(hatRate)) {
+		liste = [{ name: freierName('Fixkosten', liste), zielkonto: 'Fixkosten-Konto', bausteine: [{ typ: 'fixkosten' }] }, ...liste];
+	}
+	if (modus === 1) {
+		liste = liste.map((a) => ({ ...a, bausteine: a.bausteine.filter((b) => b.typ !== 'fixkosten') })).filter((a) => a.bausteine.length);
+		if (!liste.some((a) => a.bausteine.some((b) => b.typ === 'rest'))) {
+			liste = [...liste, { name: freierName('Spaßkonto', liste), zielkonto: 'Spaßkonto', bausteine: [{ typ: 'rest' }], rundung: STANDARD_REST_RUNDUNG }];
+		}
+	}
+	return liste;
 }
 
 /** Die Daueraufträge, wie sie die App ohne eigene Einrichtung anlegt. */

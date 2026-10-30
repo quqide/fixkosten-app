@@ -67,6 +67,16 @@ export const AUSBLENDBARE_ARTEN: ReadonlySet<WarnungArt> = new Set<WarnungArt>([
 	'geloescht'
 ]);
 
+/** Schlüssel einer Ausblendung als ein Text, z. B. für Formularfelder: „terminplanId|art“. */
+export const hinweisSchluessel = (terminplan: string, art: string) => `${terminplan}|${art}`;
+
+/** Gegenstück zu hinweisSchluessel; null, wenn der Text kein Schlüssel ist. */
+export function leseHinweisSchluessel(s: string): { terminplan: string; art: string } | null {
+	const i = s.lastIndexOf('|');
+	if (i <= 0 || i === s.length - 1) return null;
+	return { terminplan: s.slice(0, i), art: s.slice(i + 1) };
+}
+
 /** Lässt sich diese Meldung ausblenden? Nur Hinweise zu genau einem Terminplan. */
 export const istAusblendbar = (w: Pick<Warnung, 'stufe' | 'art' | 'terminplanId'>) =>
 	w.stufe === 'hinweis' && w.terminplanId != null && AUSBLENDBARE_ARTEN.has(w.art);
@@ -74,7 +84,11 @@ export const istAusblendbar = (w: Pick<Warnung, 'stufe' | 'art' | 'terminplanId'
 export interface Warnung {
 	art: WarnungArt;
 	stufe: 'warnung' | 'hinweis';
-	/** Der Terminplan, um den es geht, wenn es genau einer ist (bei „geloescht“ die am Posten gespeicherte ID). */
+	/**
+	 * Der Terminplan, um den es geht, wenn es genau einer ist; bei „geloescht“ die am Posten gespeicherte ID,
+	 * bei „duplikat“ der zweite Plan (nach ID sortiert, damit es bei jedem Abruf derselbe ist).
+	 * Die Sammelmeldung „ohne-rolle“ hat immer null, auch wenn nur ein Plan ohne Rolle ist.
+	 */
 	terminplanId: string | null;
 	/** Weitere betroffene Terminpläne, z. B. der erste Plan bei „duplikat“. */
 	weitereTerminplanIds?: string[];
@@ -318,8 +332,9 @@ export function pruefeTerminplaene(e: PruefungEingaben): Warnung[] {
 	}
 
 	// Doppelte Terminpläne: gleicher Empfänger und gleicher Betrag.
+	// Nach ID sortiert, damit dieselben Pläne unabhängig von der Reihenfolge aus Actual dieselbe Meldung ergeben.
 	const gesehen = new Map<string, Terminplan>();
-	for (const t of offen) {
+	for (const t of [...offen].sort((a, b) => a.id.localeCompare(b.id))) {
 		if (!t.empfaenger || !e.zuordnung.has(t.id)) continue;
 		const schluessel = `${t.empfaenger}|${t.betragCent}|${intervallMonate(t)}`;
 		const erster = gesehen.get(schluessel);

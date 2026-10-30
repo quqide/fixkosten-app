@@ -76,22 +76,31 @@ export function lesePosten(f: FormData, besitzer: Besitzer): { eintrag: PostenEi
 type Roh = Record<string, unknown>;
 const RICHTUNGEN = ['auf', 'ab', 'kaufm'] as const;
 
-/** Ziel eines „Rücklagen mit Ziel“-Bausteins: getrimmt, eine WKN in Großbuchstaben wie bei den Rückstellungen. */
-export function normalisiereZiel(ziel: string): string {
+/**
+ * Ziel eines „Rücklagen mit Ziel“-Bausteins: getrimmt. Passt es (ohne Rücksicht auf Groß- und Kleinschreibung)
+ * zur WKN einer Rückstellung, wird es genau so geschrieben wie dort, z. B. „a0rpwh“ → „A0RPWH“.
+ */
+export function normalisiereZiel(ziel: string, wkns: readonly string[] = []): string {
 	const z = ziel.trim();
-	return /^(?=.*\d)[a-z0-9]{6}$/i.test(z) ? z.toUpperCase() : z;
+	return wkns.find((w) => w.toLocaleUpperCase('de-DE') === z.toLocaleUpperCase('de-DE')) ?? z;
 }
 
-function pruefeBaustein(b: Roh): Baustein | null {
+/** Obergrenzen, damit eine bearbeitete Sicherung keine unsinnigen Werte einspielt. */
+export const MAX_BETRAG_CENT = 100_000_000;
+export const MAX_NAME = 100;
+
+function pruefeBaustein(b: Roh, wkns: readonly string[]): Baustein | null {
 	switch (b?.typ) {
 		case 'fest':
-			return Number.isInteger(b.betragCent) && (b.betragCent as number) >= 0 ? { typ: 'fest', betragCent: b.betragCent as number } : null;
+			return Number.isInteger(b.betragCent) && (b.betragCent as number) >= 0 && (b.betragCent as number) <= MAX_BETRAG_CENT
+				? { typ: 'fest', betragCent: b.betragCent as number }
+				: null;
 		case 'prozent': {
 			const p = b.prozent;
 			return typeof p === 'number' && Number.isFinite(p) && p >= 0 && p <= 100 ? { typ: 'prozent', prozent: p } : null;
 		}
 		case 'ruecklagen':
-			return typeof b.ziel === 'string' ? { typ: 'ruecklagen', ziel: normalisiereZiel(b.ziel) } : null;
+			return typeof b.ziel === 'string' && b.ziel.length <= MAX_NAME ? { typ: 'ruecklagen', ziel: normalisiereZiel(b.ziel, wkns) } : null;
 		case 'gemeinschaft':
 		case 'fixkosten':
 		case 'rest':
@@ -112,21 +121,22 @@ function pruefeRundung(r: unknown): Rundung | null | undefined {
 
 /**
  * Prüft Daueraufträge in der gespeicherten Form, aus dem Formular wie aus einer Sicherung.
- * Fehler je Auftrag unter `a_<index>`, übergreifende unter `allgemein`.
+ * Fehler je Auftrag unter `a_<index>`, übergreifende unter `allgemein`. `wkns`: WKNs der Rückstellungen.
  */
-export function pruefeAuftraege(roh: unknown): { auftraege: AuftragKonfig[] } | { fehler: Record<string, string> } {
+export function pruefeAuftraege(roh: unknown, wkns: readonly string[] = []): { auftraege: AuftragKonfig[] } | { fehler: Record<string, string> } {
 	if (!Array.isArray(roh)) return { fehler: { allgemein: 'Die Daueraufträge ließen sich nicht lesen.' } };
 	const fehler: Record<string, string> = {};
 	const auftraege: AuftragKonfig[] = [];
 	roh.forEach((a: Roh, i) => {
 		const name = typeof a?.name === 'string' ? a.name.trim() : '';
 		if (!name) return void (fehler[`a_${i}`] = 'Bitte einen Namen eintragen, zum Beispiel „ETF Invest“.');
+		if (name.length > MAX_NAME) return void (fehler[`a_${i}`] = `Der Name darf höchstens ${MAX_NAME} Zeichen haben.`);
 		if (!Array.isArray(a.bausteine) || !a.bausteine.length) {
 			return void (fehler[`a_${i}`] = `„${name}“: Woraus setzt sich der Betrag zusammen?`);
 		}
 		const bausteine: Baustein[] = [];
 		for (const roherBaustein of a.bausteine as Roh[]) {
-			const b = pruefeBaustein(roherBaustein);
+			const b = pruefeBaustein(roherBaustein, wkns);
 			if (!b) return void (fehler[`a_${i}`] = `„${name}“: Ein Baustein ist ungültig oder unvollständig.`);
 			bausteine.push(b);
 		}
@@ -135,24 +145,31 @@ export function pruefeAuftraege(roh: unknown): { auftraege: AuftragKonfig[] } | 
 		}
 		const rundung = pruefeRundung(a.rundung);
 		if (rundung === undefined) return void (fehler[`a_${i}`] = `„${name}“: Die Rundung ist ungültig.`);
-		if (a.zielkonto != null && typeof a.zielkonto !== 'string') return void (fehler[`a_${i}`] = `„${name}“: Das Zielkonto ist ungültig.`);
+		if (a.zielkonto != null && (typeof a.zielkonto !== 'string' || a.zielkonto.length > MAX_NAME)) {
+			return void (fehler[`a_${i}`] = `„${name}“: Das Zielkonto ist ungültig.`);
+		}
 		auftraege.push({ name, zielkonto: ((a.zielkonto as string | undefined) ?? '').trim(), bausteine, rundung });
 	});
+	const allgemein: string[] = [];
 	const gesehen = new Set<string>();
-	auftraege.forEach((a) => {
+	for (const a of auftraege) {
 		const schluessel = a.name.toLocaleLowerCase('de-DE');
 		// Terminpläne in Actual werden über den Namen zugeordnet, darum muss er eindeutig sein.
-		if (gesehen.has(schluessel)) fehler.allgemein = `Der Name „${a.name}“ kommt doppelt vor. Jeder Dauerauftrag braucht einen eigenen Namen.`;
+		if (gesehen.has(schluessel)) {
+			allgemein.push(`Der Name „${a.name}“ kommt doppelt vor. Jeder Dauerauftrag braucht einen eigenen Namen.`);
+			break;
+		}
 		gesehen.add(schluessel);
-	});
-	if (auftraege.filter((a) => a.bausteine.some((b) => b.typ === 'rest')).length > 1) {
-		fehler.allgemein = 'Nur ein Dauerauftrag kann bekommen, was übrig bleibt.';
 	}
+	if (auftraege.filter((a) => a.bausteine.some((b) => b.typ === 'rest')).length > 1) {
+		allgemein.push('Nur ein Dauerauftrag kann bekommen, was übrig bleibt.');
+	}
+	if (allgemein.length) fehler.allgemein = allgemein.join(' ');
 	return Object.keys(fehler).length ? { fehler } : { auftraege };
 }
 
 /** Liest die Daueraufträge aus dem Formular (Beträge als Text) und prüft sie. */
-export function leseAuftraege(roh: unknown): { auftraege: AuftragKonfig[] } | { fehler: Record<string, string> } {
+export function leseAuftraege(roh: unknown, wkns: readonly string[] = []): { auftraege: AuftragKonfig[] } | { fehler: Record<string, string> } {
 	if (!Array.isArray(roh)) return { fehler: { allgemein: 'Die Eingaben ließen sich nicht lesen.' } };
 	const fehler: Record<string, string> = {};
 	const umgewandelt = roh.map((a: Roh, i) => {
@@ -189,5 +206,5 @@ export function leseAuftraege(roh: unknown): { auftraege: AuftragKonfig[] } | { 
 		};
 	});
 	if (Object.keys(fehler).length) return { fehler };
-	return pruefeAuftraege(umgewandelt);
+	return pruefeAuftraege(umgewandelt, wkns);
 }

@@ -1,8 +1,8 @@
 import { error, fail, type RequestEvent } from '@sveltejs/kit';
 import type { Besitzer, PersonId } from './db.ts';
 import { lesePosten } from './formular.ts';
-import { ladeEinzelposten, loeschePosten, setzeAusblendung, speicherePosten } from './repo.ts';
-import { istAusblendbar, type WarnungArt } from '#lib/rechnung/terminplan.ts';
+import { ladeAusblendungen, ladeEinzelposten, loeschePosten, setzeAusblendung, speicherePosten } from './repo.ts';
+import { istAusblendbar, leseHinweisSchluessel, type WarnungArt } from '#lib/rechnung/terminplan.ts';
 import { warnungenFuer } from './actualAbgleich.ts';
 
 export function angemeldet(locals: App.Locals): PersonId {
@@ -43,25 +43,33 @@ export function postenAktionen(besitzerVon: (person: PersonId) => Besitzer) {
 
 /**
  * Hinweise ausblenden und wieder einblenden, genutzt von „Fixkosten“ und „Einstellungen“.
- * Das Formularfeld „hinweis“ enthält „terminplanId|art“.
+ * Das Formularfeld „hinweis“ enthält hinweisSchluessel(terminplanId, art).
  */
 export const hinweisAktionen = {
 	ausblenden: async ({ request, locals }: RequestEvent) => {
 		const wer = angemeldet(locals);
-		const [terminplan, art] = String((await request.formData()).get('hinweis') ?? '').split('|');
+		const h = leseHinweisSchluessel(String((await request.formData()).get('hinweis') ?? ''));
+		// Doppelt abgeschickt (zweiter Tab, langsame Verbindung): einfach nichts tun.
+		if (h && istAusgeblendet(wer, h)) return { meldung: 'Der Hinweis ist schon ausgeblendet.' };
 		// Nur, was gerade als Hinweis gemeldet wird; Warnungen bleiben immer sichtbar.
-		const meldung = warnungenFuer(wer).find((w) => w.terminplanId === terminplan && w.art === art);
-		if (!meldung || !istAusblendbar(meldung)) {
+		const meldung = h && warnungenFuer(wer).find((w) => w.terminplanId === h.terminplan && w.art === h.art);
+		if (!h || !meldung || !istAusblendbar(meldung)) {
 			return fail(400, { bereich: 'hinweise', fehler: { allgemein: 'Diese Meldung lässt sich nicht ausblenden.' } });
 		}
-		const undoId = setzeAusblendung(wer, { terminplan, art: art as WarnungArt }, true, wer, 'Hinweis ausgeblendet');
+		const undoId = setzeAusblendung(wer, { terminplan: h.terminplan, art: meldung.art }, true, wer, 'Hinweis ausgeblendet');
 		return { meldung: 'Hinweis ausgeblendet.', undoId };
 	},
 	einblenden: async ({ request, locals }: RequestEvent) => {
 		const wer = angemeldet(locals);
-		const [terminplan, art] = String((await request.formData()).get('hinweis') ?? '').split('|');
-		if (!terminplan || !art) return fail(400, { bereich: 'hinweise', fehler: { allgemein: 'Dieser Hinweis ist nicht ausgeblendet.' } });
-		const undoId = setzeAusblendung(wer, { terminplan, art: art as WarnungArt }, false, wer, 'Hinweis wieder eingeblendet');
+		const h = leseHinweisSchluessel(String((await request.formData()).get('hinweis') ?? ''));
+		if (!h || !istAusgeblendet(wer, h)) {
+			return fail(400, { bereich: 'hinweise', fehler: { allgemein: 'Dieser Hinweis ist nicht ausgeblendet.' } });
+		}
+		const undoId = setzeAusblendung(wer, { terminplan: h.terminplan, art: h.art as WarnungArt }, false, wer, 'Hinweis wieder eingeblendet');
 		return { meldung: 'Hinweis wieder eingeblendet.', undoId };
 	}
 };
+
+function istAusgeblendet(person: PersonId, h: { terminplan: string; art: string }) {
+	return ladeAusblendungen(person).some((x) => x.terminplan === h.terminplan && x.art === h.art);
+}

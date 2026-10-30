@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db, oeffneDatenbank, setzeDatenbank } from './db';
-import { eindeutigeNamen } from '#lib/rechnung/aufstellung.ts';
+import { auftraegeFuerModus, berechneAufstellung } from '#lib/rechnung/aufstellung.ts';
 import {
 	aendereGemeinschaft,
 	aendereModus,
 	aenderePerson,
 	exportiere,
 	importiere,
+	letzteAenderungen,
 	ladeAuftraege,
 	ladeAusblendungen,
 	ladeGemeinschaft,
@@ -42,19 +43,52 @@ describe('Datenhaltung', () => {
 			.prepare('INSERT INTO aenderungen (zeit, person, bereich, text, rueckgaengig) VALUES (?, ?, ?, ?, ?)')
 			.run(new Date().toISOString(), 'a', 'gemeinsam', 'Miete geändert', JSON.stringify({ typ: 'gemeinschaft', vorher: { miete_cent: 1, modell: 'A' } }));
 		const id = Number(r.lastInsertRowid);
+		const zeilen = letzteAenderungen(50).length;
 		expect(() => macheRueckgaengig(id, 'a')).toThrow(NichtMehrRueckgaengig);
 		expect(() => macheRueckgaengig(id, 'a')).toThrow('Diese Änderung lässt sich nicht mehr rückgängig machen.');
-		expect(db().prepare('SELECT rueckgaengig FROM aenderungen WHERE id = ?').get(id)).not.toEqual({ rueckgaengig: null });
+		// Der Eintrag bleibt unverändert, zeigt aber keinen Rückgängig-Knopf, und es kommt keine Verlaufszeile dazu.
+		expect(db().prepare('SELECT rueckgaengig FROM aenderungen WHERE id = ?').get(id)).toEqual({
+			rueckgaengig: JSON.stringify({ typ: 'gemeinschaft', vorher: { miete_cent: 1, modell: 'A' } })
+		});
+		expect(letzteAenderungen(50).find((a) => a.id === id)?.kannRueckgaengig).toBe(false);
+		expect(letzteAenderungen(50)).toHaveLength(zeilen);
 		expect(ladeGemeinschaft()).toEqual(vorher);
 	});
 
 	it('macht Kontenmodell und angepasste Daueraufträge gemeinsam rückgängig', () => {
-		const vorher = ladeAuftraege('a').map((a) => a.name);
+		const ohneId = () => ladeAuftraege('a').map(({ id: _id, ...a }) => a);
+		const vorher = ohneId();
 		const id = aendereModus('a', 2, [{ name: 'Fixkosten', zielkonto: 'Fixkosten-Konto', bausteine: [{ typ: 'fixkosten' }] }], 'a');
 		expect(ladePerson('a').modus).toBe(2);
+		// Später geändertes Netto bleibt beim Rückgängigmachen erhalten.
+		aenderePerson('a', { nettoCent: 345000 }, 'a', 'Netto');
 		macheRueckgaengig(id, 'a');
-		expect(ladePerson('a').modus).toBe(1);
-		expect(ladeAuftraege('a').map((a) => a.name)).toEqual(vorher);
+		expect(ladePerson('a')).toMatchObject({ modus: 1, nettoCent: 345000 });
+		expect(ohneId()).toEqual(vorher);
+		const a = berechneAufstellung({
+			modus: 1,
+			nettoCent: 345000,
+			auftraege: ladeAuftraege('a'),
+			rueckstellungen: [],
+			gemeinschaftCent: 0,
+			fixkostenMonatlichCent: 10000
+		});
+		expect(a.warnungen.filter((w) => w.includes('doppelt'))).toEqual([]);
+	});
+
+	it('zeigt getrennte Einträge eines alten Kontenmodell-Wechsels nicht mehr als rückgängig machbar', () => {
+		const alt = (typ: string, text: string, vorher: unknown) =>
+			Number(
+				db()
+					.prepare('INSERT INTO aenderungen (zeit, person, bereich, text, rueckgaengig) VALUES (?, ?, ?, ?, ?)')
+					.run(new Date().toISOString(), 'a', 'person-a', text, JSON.stringify({ typ, person: 'a', vorher })).lastInsertRowid
+			);
+		const p = alt('person', 'Kontenmodell geändert', ladePerson('a'));
+		const auf = alt('auftraege', 'Daueraufträge an Kontenmodell angepasst', ladeAuftraege('a'));
+		for (const id of [p, auf]) {
+			expect(letzteAenderungen(50).find((x) => x.id === id)?.kannRueckgaengig).toBe(false);
+			expect(() => macheRueckgaengig(id, 'a')).toThrow(NichtMehrRueckgaengig);
+		}
 	});
 
 	it('legt zwei Personen und ein leeres Gemeinschaftskonto an', () => {
@@ -164,8 +198,11 @@ describe('Datenhaltung', () => {
 
 		// Kontenmodell wechseln, wenn schon ein Auftrag „Fixkosten“ ohne Rate existiert.
 		speichereAuftraege('a', [...ladeAuftraege('a'), { name: 'Fixkosten', zielkonto: 'Tagesgeld', bausteine: [{ typ: 'fest', betragCent: 100 }] }], 'a');
-		aendereModus('a', 2, eindeutigeNamen([{ name: 'Fixkosten', zielkonto: 'Fixkosten-Konto', bausteine: [{ typ: 'fixkosten' }] }, ...ladeAuftraege('a')]), 'a');
-		expect(ladeAuftraege('a').map((x) => x.name)).toContain('Fixkosten (2)');
+		aendereModus('a', 2, auftraegeFuerModus(ladeAuftraege('a'), 2), 'a');
+		// Der eigene Auftrag behält seinen Namen, der neue mit der Rate bekommt den Zusatz.
+		const nachher = ladeAuftraege('a');
+		expect(nachher.find((x) => x.name === 'Fixkosten')?.zielkonto).toBe('Tagesgeld');
+		expect(nachher.find((x) => x.name === 'Fixkosten (2)')?.bausteine).toEqual([{ typ: 'fixkosten' }]);
 
 		const sicherung = JSON.parse(JSON.stringify(exportiere()));
 		setzeDatenbank(oeffneDatenbank(':memory:'));
@@ -179,8 +216,14 @@ describe('Datenhaltung', () => {
 			{ name: 'Fixkosten', zielkonto: 'X', bausteine: [{ typ: 'fixkosten' }] },
 			{ name: 'Fixkosten', zielkonto: 'Y', bausteine: [{ typ: 'rest' }] }
 		];
-		importiere(s, 'a');
+		expect(importiere(s, 'a').umbenannt).toEqual(['„Fixkosten“ → „Fixkosten (2)“']);
 		expect(ladeAuftraege('a').map((x) => x.name)).toEqual(['Fixkosten', 'Fixkosten (2)']);
+	});
+
+	it('benennt Namen, die kein Text sind, nicht stillschweigend um', () => {
+		const s = JSON.parse(JSON.stringify(exportiere()));
+		s.auftraege.a = [{ name: 42, zielkonto: 'X', bausteine: [{ typ: 'rest' }] }];
+		expect(() => importiere(s, 'a')).toThrow('ungültige Daueraufträge');
 	});
 
 	it('verwirft unbekannte Symbole beim Import', () => {
