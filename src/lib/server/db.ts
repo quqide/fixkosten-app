@@ -101,11 +101,16 @@ INSERT OR IGNORE INTO gemeinschaft (id) VALUES (1);
 
 export function oeffneDatenbank(pfad: string): DatabaseSync {
 	const db = new DatabaseSync(pfad);
-	db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
-	db.exec(SCHEMA);
-	ergaenzeSpalten(db);
-	legePositionenAn(db);
-	return db;
+	try {
+		db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
+		db.exec(SCHEMA);
+		ergaenzeSpalten(db);
+		legePositionenAn(db);
+		return db;
+	} catch (e) {
+		db.close();
+		throw e;
+	}
 }
 
 /** Spalten, die nach der ersten Version dazukamen. */
@@ -141,17 +146,24 @@ function ergaenzeSpalten(db: DatabaseSync) {
 /** Einmalig: aus Miete, Alltag und Rücklage der ersten Version frei bearbeitbare Positionen machen. */
 function legePositionenAn(db: DatabaseSync) {
 	if (db.prepare("SELECT 1 FROM merker WHERE schluessel = 'positionen'").get()) return;
-	const g = db.prepare('SELECT * FROM gemeinschaft WHERE id = 1').get() as Record<string, number>;
-	const einf = db.prepare(
-		'INSERT INTO gemeinschaft_positionen (name, art, betrag_cent, ausgang, sortierung) VALUES (?, ?, ?, ?, ?)'
-	);
-	if (!(db.prepare('SELECT COUNT(*) AS n FROM gemeinschaft_positionen').get() as { n: number }).n) {
-		einf.run('Miete', 'fest', g.miete_cent ?? 0, JSON.stringify({ art: 'ueberweisung', ziel: 'Vermieter', tag: 1 }), 0);
-		einf.run('Lebensmittel und Alltag', 'fest', g.alltag_cent ?? 0, null, 1);
-		einf.run('Gemeinsame Rücklage', 'fest', g.ruecklage_cent ?? 0, JSON.stringify({ art: 'umbuchung', ziel: 'Gemeinschaftstagesgeld', tag: null }), 2);
-		einf.run('Gemeinsame Fixkosten', 'fixkosten', 0, null, 3);
+	db.exec('BEGIN');
+	try {
+		const g = db.prepare('SELECT * FROM gemeinschaft WHERE id = 1').get() as Record<string, number>;
+		const einf = db.prepare(
+			'INSERT INTO gemeinschaft_positionen (name, art, betrag_cent, ausgang, sortierung) VALUES (?, ?, ?, ?, ?)'
+		);
+		if (!(db.prepare('SELECT COUNT(*) AS n FROM gemeinschaft_positionen').get() as { n: number }).n) {
+			einf.run('Miete', 'fest', g.miete_cent ?? 0, JSON.stringify({ art: 'ueberweisung', ziel: 'Vermieter', tag: 1 }), 0);
+			einf.run('Lebensmittel und Alltag', 'fest', g.alltag_cent ?? 0, null, 1);
+			einf.run('Gemeinsame Rücklage', 'fest', g.ruecklage_cent ?? 0, JSON.stringify({ art: 'umbuchung', ziel: 'Gemeinschaftstagesgeld', tag: null }), 2);
+			einf.run('Gemeinsame Fixkosten', 'fixkosten', 0, null, 3);
+		}
+		db.prepare("INSERT INTO merker (schluessel, wert) VALUES ('positionen', '1')").run();
+		db.exec('COMMIT');
+	} catch (e) {
+		db.exec('ROLLBACK');
+		throw e;
 	}
-	db.prepare("INSERT INTO merker (schluessel, wert) VALUES ('positionen', '1')").run();
 }
 
 /** Der Datenordner fehlt oder ist für den Container nicht beschreibbar. */
@@ -166,6 +178,21 @@ export class DatenordnerFehler extends Error {
 	}
 }
 
+const SQLITE_READONLY = 8;
+const SQLITE_CANTOPEN = 14;
+
+/** Fehler, die daran liegen, dass der Datenordner oder die Datei nicht les- oder beschreibbar ist. */
+export function istZugriffsfehler(e: unknown): boolean {
+	const f = e as { code?: string; errcode?: number } | null;
+	if (f?.code === 'EACCES' || f?.code === 'EROFS') return true;
+	if (f?.code === 'ERR_SQLITE_ERROR' && typeof f.errcode === 'number') {
+		// Erweiterte Fehlercodes tragen den Grundcode im unteren Byte.
+		const grund = f.errcode & 0xff;
+		return grund === SQLITE_READONLY || grund === SQLITE_CANTOPEN;
+	}
+	return false;
+}
+
 let instanz: DatabaseSync | undefined;
 
 export function db(): DatabaseSync {
@@ -173,9 +200,14 @@ export function db(): DatabaseSync {
 		const ordner = process.env.DATA_DIR ?? 'data';
 		try {
 			mkdirSync(ordner, { recursive: true });
-			instanz = oeffneDatenbank(join(ordner, 'fixkosten.db'));
 		} catch (e) {
 			throw new DatenordnerFehler(ordner, e);
+		}
+		try {
+			instanz = oeffneDatenbank(join(ordner, 'fixkosten.db'));
+		} catch (e) {
+			// Nur Zugriffsprobleme liegen am Ordner; SQL- oder Migrationsfehler unverändert weitergeben.
+			throw istZugriffsfehler(e) ? new DatenordnerFehler(ordner, e) : e;
 		}
 	}
 	return instanz;

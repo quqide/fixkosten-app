@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { oeffneDatenbank, setzeDatenbank } from './db';
+import { db, oeffneDatenbank, setzeDatenbank } from './db';
 import {
 	aendereGemeinschaft,
 	aendereModus,
@@ -13,6 +13,7 @@ import {
 	ladePosten,
 	loeschePosten,
 	macheRueckgaengig,
+	NichtMehrRueckgaengig,
 	speicherePosten,
 	type PostenEintrag
 } from './repo';
@@ -30,6 +31,19 @@ const icloud: PostenEintrag = {
 beforeEach(() => setzeDatenbank(oeffneDatenbank(':memory:')));
 
 describe('Datenhaltung', () => {
+	it('meldet alte Gemeinschafts-Einträge als nicht mehr rückgängig zu machen und lässt sie offen', () => {
+		const vorher = ladeGemeinschaft();
+		// So sah ein Eintrag aus der ersten Version aus: ohne Positionen.
+		const r = db()
+			.prepare('INSERT INTO aenderungen (zeit, person, bereich, text, rueckgaengig) VALUES (?, ?, ?, ?, ?)')
+			.run(new Date().toISOString(), 'a', 'gemeinsam', 'Miete geändert', JSON.stringify({ typ: 'gemeinschaft', vorher: { miete_cent: 1, modell: 'A' } }));
+		const id = Number(r.lastInsertRowid);
+		expect(() => macheRueckgaengig(id, 'a')).toThrow(NichtMehrRueckgaengig);
+		expect(() => macheRueckgaengig(id, 'a')).toThrow('Diese Änderung lässt sich nicht mehr rückgängig machen.');
+		expect(db().prepare('SELECT rueckgaengig FROM aenderungen WHERE id = ?').get(id)).not.toEqual({ rueckgaengig: null });
+		expect(ladeGemeinschaft()).toEqual(vorher);
+	});
+
 	it('macht Kontenmodell und angepasste Daueraufträge gemeinsam rückgängig', () => {
 		const vorher = ladeAuftraege('a').map((a) => a.name);
 		const id = aendereModus('a', 2, [{ name: 'Fixkosten', zielkonto: 'Fixkosten-Konto', bausteine: [{ typ: 'fixkosten' }] }], 'a');
