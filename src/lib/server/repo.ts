@@ -599,6 +599,14 @@ function zuAenderung(z: Zeile): Aenderung {
 	};
 }
 
+/** Der Eintrag ist zu alt, um ihn noch anzuwenden; er bleibt im Verlauf offen. */
+export class NichtMehrRueckgaengig extends Error {
+	constructor() {
+		super('Diese Änderung lässt sich nicht mehr rückgängig machen.');
+	}
+}
+
+/** Text der neuen Verlaufszeile, null wenn der Eintrag fehlt oder schon rückgängig gemacht ist. Wirft NichtMehrRueckgaengig. */
 export function macheRueckgaengig(id: number, wer: PersonId): string | null {
 	return inTransaktion(() => {
 		const z = db().prepare('SELECT * FROM aenderungen WHERE id = ?').get(id) as Zeile | undefined;
@@ -614,7 +622,8 @@ export function macheRueckgaengig(id: number, wer: PersonId): string | null {
 				break;
 			case 'gemeinschaft':
 				// Einträge aus der ersten Version (ohne Positionen) lassen sich nicht mehr anwenden.
-				if (Array.isArray(r.vorher.positionen)) schreibeGemeinschaft(r.vorher);
+				if (!Array.isArray(r.vorher.positionen)) throw new NichtMehrRueckgaengig();
+				schreibeGemeinschaft(r.vorher);
 				break;
 			case 'auftraege':
 				schreibeAuftraege(r.person, r.vorher);

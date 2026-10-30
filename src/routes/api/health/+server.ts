@@ -7,6 +7,8 @@ export function GET() {
 		db().prepare('SELECT 1').get();
 		return json({ status: 'ok' });
 	} catch (e) {
-		return json({ status: 'fehler', meldung: (e as Error).message }, { status: 503 });
+		// Pfad, Benutzer und Gruppe nur ins Log, nicht in die öffentliche Antwort.
+		console.error('Healthcheck fehlgeschlagen:', (e as Error).message);
+		return json({ status: 'fehler' }, { status: 503 });
 	}
 }
