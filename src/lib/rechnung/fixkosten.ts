@@ -42,6 +42,8 @@ export interface FixkostenPosten {
 	/** Nur bei negativem Betrag: Tag, an dem das Geld eingeht. */
 	eingangstag?: number | null;
 	beteiligungen?: Beteiligung[];
+	/** Gewähltes Symbol, sonst schlägt die App eins nach dem Namen vor. */
+	icon?: string | null;
 }
 
 export interface Einstellungen {

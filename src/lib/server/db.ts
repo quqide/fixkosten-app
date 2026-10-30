@@ -125,7 +125,8 @@ const NEUE_SPALTEN: [tabelle: string, spalte: string, definition: string][] = [
 	['rueckstellungen', 'aktiv', 'INTEGER NOT NULL DEFAULT 1'],
 	['rueckstellungen', 'actual_kategorie', 'TEXT'],
 	['rueckstellungen', 'stand_cent', 'INTEGER'],
-	['rueckstellungen', 'stand_datum', 'TEXT']
+	['rueckstellungen', 'stand_datum', 'TEXT'],
+	['posten', 'icon', 'TEXT']
 ];
 
 function ergaenzeSpalten(db: DatabaseSync) {

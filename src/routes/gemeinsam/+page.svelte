@@ -3,7 +3,8 @@
 	import Icon from '#lib/components/Icon.svelte';
 	import PostenDialog from '#lib/components/PostenDialog.svelte';
 	import PostenListe from '#lib/components/PostenListe.svelte';
-	import { betragFeld, eur, eurGanz, initiale, zeitpunkt } from '#lib/format.ts';
+	import PostenSymbol from '#lib/components/PostenSymbol.svelte';
+	import { betragFeld, eur, eurGanz, zeitpunkt } from '#lib/format.ts';
 	import type { FixkostenPosten } from '#lib/rechnung/fixkosten.ts';
 	import { SCHRITTE } from '#lib/rechnung/rundung.ts';
 	import { STANDARD_ANTEIL_RUNDUNG } from '#lib/rechnung/gemeinschaft.ts';
@@ -165,7 +166,7 @@
 			<ul class="rows">
 				{#each r.positionen as pos, i (i)}
 					{@const konf = data.konto.positionen[i]}
-					<li><div class="row"><span class="icon {konf?.art === 'fixkosten' ? 'a50' : konf?.ausgang?.art === 'umbuchung' ? 'a20' : 'a50'}">{initiale(pos.name)}</span>
+					<li><div class="row"><PostenSymbol name={pos.name} klasse={konf?.art === 'fixkosten' ? 'a50' : konf?.ausgang?.art === 'umbuchung' ? 'a20' : 'a50'} />
 						<span class="main"><span class="title">{pos.name}</span><span class="detail">{ausgangText(konf)}</span></span>
 						<span class="value">{eur(pos.betragCent)}</span></div></li>
 				{/each}

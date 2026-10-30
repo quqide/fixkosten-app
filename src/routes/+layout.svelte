@@ -3,8 +3,8 @@
 	import '../app.css';
 	import { enhance } from '$app/forms';
 	import { page } from '$app/state';
-	import favicon from '#lib/assets/favicon.svg';
 	import Icon from '#lib/components/Icon.svelte';
+	import Logo from '#lib/components/Logo.svelte';
 	import { themeCss } from '#lib/themes.ts';
 	import { rueckgaengig, toast } from '#lib/toast.svelte.ts';
 	import type { LayoutProps } from './$types';
@@ -29,7 +29,9 @@
 </script>
 
 <svelte:head>
-	<link rel="icon" href={favicon} />
+	<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+	<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+	<link rel="manifest" href="/manifest.webmanifest" />
 	<title>Fixkosten</title>
 	<!-- eslint-disable-next-line svelte/no-at-html-tags -->
 	{@html `<style>${themeCss}</style>`}
@@ -39,7 +41,7 @@
 	{#if data.ich}
 		<header class="topbar">
 			<a class="brand" href="/">
-				<span class="brand-mark"><Icon name="haken" size={18} /></span>Fixkosten
+				<Logo size={32} />Fixkosten
 			</a>
 			{#if !data.festePerson}
 				<form class="who" method="POST" action="/wer?/waehlen" use:enhance aria-label="Wer bist du?">
@@ -83,7 +85,6 @@
 <style>
 	.topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 	.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; color: var(--label); text-decoration: none; }
-	.brand-mark { width: 32px; height: 32px; border-radius: 10px; background: var(--tint); color: var(--surface); display: grid; place-items: center; }
 	.who { display: flex; gap: 6px; align-items: center; font-weight: 600; }
 	.who button { display: flex; align-items: center; gap: 8px; border: 1px solid transparent; background: none; border-radius: 999px; padding: 4px 12px 4px 4px; min-height: 40px; cursor: pointer; color: var(--secondary); font-weight: 500; }
 	.who button[aria-pressed='true'] { background: var(--surface); border-color: var(--separator); color: var(--label); box-shadow: var(--shadow); }
