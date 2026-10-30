@@ -46,18 +46,43 @@ export function postenMitZeilen(posten: PostenEintrag[], stichtag: string, ueber
 	});
 }
 
-/** Stand und Monatsrate je Rückstellung; der Stand kommt aus Actual, sonst von Hand. */
-export function rueckstellungenMitStand(
-	liste: RueckstellungEintrag[],
-	e: { nettoCent: number; stichtag: string; ueberweisungstag: number; salden: Record<string, number> | null }
-) {
-	return liste.map((r) => {
-		const ausActual = r.actualKategorie && e.salden ? (e.salden[r.actualKategorie] ?? null) : null;
-		const standCent = ausActual ?? r.standCent;
+interface ActualSalden {
+	kategorieSalden?: Record<string, number>;
+	kategorien?: { id: string; name: string }[];
+}
+
+/** Warum der Stand aus Actual fehlt, oder null, wenn er da ist (oder keiner gebraucht wird). */
+function fehlenderStand(r: RueckstellungEintrag, actual: boolean, stand: ActualSalden | null): string | null {
+	if (r.art === 'fest' || !r.actualKategorie || stand?.kategorieSalden?.[r.actualKategorie] != null) return null;
+	if (!actual) return 'Actual ist nicht eingerichtet, daher fehlt der Stand aus der Kategorie.';
+	if (!stand) return 'Noch kein Abruf aus Actual, daher fehlt der Stand aus der Kategorie.';
+	const name = stand.kategorien?.find((k) => k.id === r.actualKategorie)?.name;
+	return name ? `Kategorie „${name}“ in Actual nicht gefunden.` : 'Kategorie in Actual nicht gefunden.';
+}
+
+/**
+ * Stand und Monatsrate je Rückstellung einer Person. Der Stand kommt aus Actual (nur wenn es
+ * eingerichtet ist), sonst von Hand. Übersicht und Einstellungen rechnen beide hiermit.
+ */
+export function rueckstellungenMitStand(id: PersonId, stichtag: string) {
+	const person = ladePerson(id);
+	const actual = actualEingerichtet(id);
+	const stand = actual ? (ladeActualStand<ActualSalden>(id)?.daten ?? null) : null;
+	return ladeRueckstellungen(id).map((r) => {
+		const ausActual = r.actualKategorie ? (stand?.kategorieSalden?.[r.actualKategorie] ?? null) : null;
+		const hinweis = fehlenderStand(r, actual, stand);
+		const standCent = r.actualKategorie ? ausActual : r.standCent;
 		return {
 			eintrag: r,
-			standQuelle: ausActual != null ? ('actual' as const) : r.standCent != null ? ('hand' as const) : null,
-			...berechneRueckstellung(r, { standCent, nettoCent: e.nettoCent, stichtag: e.stichtag, ueberweisungstag: e.ueberweisungstag })
+			standQuelle: ausActual != null ? ('actual' as const) : standCent != null ? ('hand' as const) : null,
+			hinweis,
+			...berechneRueckstellung(r, {
+				standCent,
+				nettoCent: person.nettoCent,
+				stichtag,
+				ueberweisungstag: person.ueberweisungstag,
+				standUnbekannt: hinweis != null
+			})
 		};
 	});
 }
@@ -65,12 +90,7 @@ export function rueckstellungenMitStand(
 export function personAnsicht(id: PersonId, stichtag: string) {
 	const person = ladePerson(id);
 	const posten = ladePosten(id);
-	const rueckstellungen = rueckstellungenMitStand(ladeRueckstellungen(id), {
-		nettoCent: person.nettoCent,
-		stichtag,
-		ueberweisungstag: person.ueberweisungstag,
-		salden: ladeActualStand<{ kategorieSalden?: Record<string, number> }>(id)?.daten.kategorieSalden ?? null
-	});
+	const rueckstellungen = rueckstellungenMitStand(id, stichtag);
 	const gemeinschaft = gemeinschaftAnsicht(stichtag);
 	const einstellungen = { stichtag, ueberweisungstag: person.ueberweisungstag };
 	const fixkosten = berechneFixkosten(posten, einstellungen);
@@ -83,6 +103,12 @@ export function personAnsicht(id: PersonId, stichtag: string) {
 		gemeinschaftCent: gemeinschaft.anteil[id].betragCent,
 		fixkostenMonatlichCent: fixkosten.summeMonatlichCent
 	});
+	for (const r of rueckstellungen) {
+		if (r.hinweis && r.eintrag.aktiv && r.eintrag.art !== 'fest') {
+			const folge = r.eintrag.art === 'faellig' ? 'Ohne Stand ist keine Rate eingeplant.' : 'Die Rate ist nicht am Ziel gekappt.';
+			aufstellung.warnungen.push(`Rücklage „${r.eintrag.name}“: ${r.hinweis} ${folge}`);
+		}
+	}
 	const ausstehendCent =
 		person.modus !== 1
 			? 0

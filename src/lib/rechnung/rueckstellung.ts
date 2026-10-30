@@ -32,7 +32,8 @@ export interface RueckstellungStand {
 	standCent: number | null;
 	/** Anteil erreicht, 0–1, falls ein Ziel existiert und der Stand bekannt ist. */
 	fortschritt: number | null;
-	status: 'aktiv' | 'pausiert' | 'erreicht' | 'faellig';
+	/** unbekannt: Der Stand soll aus Actual kommen, liegt aber nicht vor. */
+	status: 'aktiv' | 'pausiert' | 'erreicht' | 'faellig' | 'unbekannt';
 	/** Raten bis zur Fälligkeit (nur „faellig“). */
 	restRaten: number | null;
 }
@@ -60,7 +61,14 @@ export function ratenBis(stichtag: IsoDatum, faellig: IsoDatum, ueberweisungstag
 
 export function berechneRueckstellung(
 	r: RueckstellungKonfig,
-	e: { standCent: number | null; nettoCent: number; stichtag: IsoDatum; ueberweisungstag: number }
+	e: {
+		standCent: number | null;
+		nettoCent: number;
+		stichtag: IsoDatum;
+		ueberweisungstag: number;
+		/** Der Stand soll aus Actual kommen, fehlt aber. Dann nicht mit 0 € rechnen. */
+		standUnbekannt?: boolean;
+	}
 ): RueckstellungStand {
 	const zielCent =
 		r.art === 'fest'
@@ -75,6 +83,11 @@ export function berechneRueckstellung(
 	if (!r.aktiv) return { ...basis, rateCent: 0, status: 'pausiert' };
 
 	if (r.art === 'fest') return { ...basis, rateCent: r.betragCent, status: 'aktiv' };
+
+	if (e.standUnbekannt) {
+		// Bis Ziel: der Monatsbetrag läuft weiter, nur die Kappung am Ziel fehlt. Bis Datum: ohne Stand keine Rate.
+		return { ...basis, standCent: null, fortschritt: null, rateCent: r.art === 'ziel' ? r.betragCent : 0, status: 'unbekannt' };
+	}
 
 	if (r.art === 'ziel') {
 		if (zielCent != null && stand != null && stand >= zielCent) return { ...basis, rateCent: 0, status: 'erreicht' };

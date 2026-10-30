@@ -57,16 +57,7 @@ export const load: PageServerLoad = ({ locals }) => {
 		warnungen: actual ? warnungenFuer(id) : [],
 		person: ladePerson(id),
 		auftraege: ladeAuftraege(id),
-		rueckstellungen: (() => {
-			const p = ladePerson(id);
-			const stand = actual ? ladeActualStand<Schnappschuss>(id) : null;
-			return rueckstellungenMitStand(ladeRueckstellungen(id), {
-				nettoCent: p.nettoCent,
-				stichtag: heute(),
-				ueberweisungstag: p.ueberweisungstag,
-				salden: stand?.daten.kategorieSalden ?? null
-			});
-		})(),
+		rueckstellungen: rueckstellungenMitStand(id, heute()),
 		// Ausgabe-Kategorien aus dem letzten Abruf, für den Stand der Rückstellungen.
 		ausgabeKategorien: actual ? (ladeActualStand<Schnappschuss>(id)?.daten.kategorien.filter((k) => !k.einnahme) ?? []) : [],
 		verlauf: letzteAenderungen(15),

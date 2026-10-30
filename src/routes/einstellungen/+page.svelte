@@ -61,6 +61,7 @@
 		if (s.status === 'pausiert') return 'Pausiert, geht diesen Monat nichts drauf.';
 		if (s.status === 'erreicht') return 'Ziel erreicht, pausiert sich von selbst, bis wieder Geld fehlt.';
 		if (s.status === 'faellig') return 'Fälligkeit ist vorbei.';
+		if (s.status === 'unbekannt' && !s.rateCent) return 'Ohne Stand ist diesen Monat keine Rate eingeplant.';
 		const rate = `Diesen Monat ${eur(s.rateCent)}`;
 		return s.restRaten ? `${rate}, noch ${s.restRaten} ${s.restRaten === 1 ? 'Rate' : 'Raten'}.` : `${rate}.`;
 	}
@@ -259,11 +260,15 @@
 				</div>
 				{#if r.art !== 'fest'}
 					<div class:inline-fields={!r.kategorie}>
-						{#if data.ausgabeKategorien.length}
+						{#if data.ausgabeKategorien.length || r.kategorie}
 							<label class="mini"><span>Stand aus</span>
 								<select bind:value={r.kategorie} aria-label="Stand aus">
 									<option value="">von Hand</option>
 									{#each data.ausgabeKategorien as k (k.id)}<option value={k.id}>Actual: {k.name}</option>{/each}
+									<!-- Verknüpfte Kategorie, die (ohne Actual oder nach dem Löschen) nicht in der Liste steht. -->
+									{#if r.kategorie && !data.ausgabeKategorien.some((k) => k.id === r.kategorie)}
+										<option value={r.kategorie}>Actual: nicht gefunden</option>
+									{/if}
 								</select>
 							</label>
 						{/if}
@@ -281,6 +286,7 @@
 							</div>
 							<span class="help">{eur(s.standCent ?? 0)} von {eur(s.zielCent ?? 0)}{s.standQuelle === 'actual' ? ' (aus Actual)' : ''}</span>
 						{/if}
+						{#if s.hinweis}<span class="error">{s.hinweis}</span>{/if}
 						<span class="help">{statusText(s)}</span>
 					</div>
 				{/if}
