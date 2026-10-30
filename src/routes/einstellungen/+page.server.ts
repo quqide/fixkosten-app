@@ -1,6 +1,6 @@
 import { fail } from '@sveltejs/kit';
 import { leseBetrag, leseGanzzahl, leseProzent } from '#lib/eingabe.ts';
-import { eindeutigeNamen, STANDARD_REST_RUNDUNG, type AuftragKonfig } from '#lib/rechnung/aufstellung.ts';
+import { auftraegeFuerModus } from '#lib/rechnung/aufstellung.ts';
 import { leseAuftraege } from '#lib/server/formular.ts';
 import { heute } from '#lib/rechnung/datum.ts';
 import { rueckstellungenMitStand } from '#lib/server/ansicht.ts';
@@ -75,20 +75,8 @@ export const actions: Actions = {
 		const modus = Number((await request.formData()).get('modus'));
 		if (modus !== 1 && modus !== 2) return fail(400, { bereich: 'modus', fehler: { modus: 'Bitte wähle ein Kontenmodell.' } });
 		// Daueraufträge passend machen: Modus 2 braucht die Fixkosten-Rate, Modus 1 einen Rest fürs Spaßkonto.
-		let auftraege = ladeAuftraege(wer);
-		const hatRate = (a: AuftragKonfig) => a.bausteine.some((b) => b.typ === 'fixkosten');
-		if (modus === 2 && !auftraege.some(hatRate)) {
-			auftraege = [{ name: 'Fixkosten', zielkonto: 'Fixkosten-Konto', bausteine: [{ typ: 'fixkosten' }] }, ...auftraege];
-		}
-		if (modus === 1) {
-			auftraege = auftraege
-				.map((a) => ({ ...a, bausteine: a.bausteine.filter((b) => b.typ !== 'fixkosten') }))
-				.filter((a) => a.bausteine.length);
-			if (!auftraege.some((a) => a.bausteine.some((b) => b.typ === 'rest'))) {
-				auftraege.push({ name: 'Spaßkonto', zielkonto: 'Spaßkonto', bausteine: [{ typ: 'rest' }], rundung: STANDARD_REST_RUNDUNG });
-			}
-		}
-		const undoId = aendereModus(wer, modus, eindeutigeNamen(auftraege), wer);
+		const auftraege = auftraegeFuerModus(ladeAuftraege(wer), modus);
+		const undoId = aendereModus(wer, modus, auftraege, wer);
 		return { meldung: 'Kontenmodell geändert, Daueraufträge angepasst.', undoId };
 	},
 
@@ -100,7 +88,7 @@ export const actions: Actions = {
 		} catch {
 			return fail(400, { bereich: 'auftraege', fehler: { allgemein: 'Die Eingaben ließen sich nicht lesen.' } });
 		}
-		const ergebnis = leseAuftraege(roh);
+		const ergebnis = leseAuftraege(roh, wknsVon(wer));
 		if ('fehler' in ergebnis) return fail(400, { bereich: 'auftraege', fehler: ergebnis.fehler });
 		const undoId = speichereAuftraege(wer, ergebnis.auftraege, wer);
 		return { meldung: 'Daueraufträge gespeichert.', undoId };
@@ -230,17 +218,22 @@ export const actions: Actions = {
 		if (!(datei instanceof File) || datei.size === 0) {
 			return fail(400, { bereich: 'import', fehler: { datei: 'Bitte wähle eine Sicherungsdatei aus.' } });
 		}
+		let umbenannt: string[];
 		try {
-			importiere(JSON.parse(await datei.text()) as Sicherung, wer);
+			umbenannt = importiere(JSON.parse(await datei.text()) as Sicherung, wer).umbenannt;
 		} catch (e) {
 			const text = e instanceof SyntaxError ? 'Die Datei ist keine gültige Sicherung.' : (e as Error).message;
 			return fail(400, { bereich: 'import', fehler: { datei: text } });
 		}
-		return { meldung: 'Sicherung eingespielt.' };
+		const hinweis = umbenannt.length ? ` Doppelte Namen umbenannt: ${umbenannt.join(', ')}.` : '';
+		return { meldung: `Sicherung eingespielt.${hinweis}` };
 	}
 };
 
 type Roh = Record<string, unknown>;
+
+/** WKNs der Rückstellungen, damit „Rücklagen mit Ziel“ sie gleich schreibt. */
+const wknsVon = (person: PersonId) => ladeRueckstellungen(person).flatMap((r) => (r.wkn ? [r.wkn] : []));
 
 /** Prüft die Rückstellungen aus dem Formular. */
 function leseRueckstellungen(roh: unknown, person: PersonId): { liste: RueckstellungEintrag[] } | { fehler: Record<string, string> } {

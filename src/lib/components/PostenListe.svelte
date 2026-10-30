@@ -22,11 +22,12 @@
 	const summe = $derived(
 		eintraege.reduce((s, e) => s + e.zeile.monatlichCent + e.beteiligungen.reduce((t, b) => t + b.monatlichCent, 0), 0)
 	);
-	/** Zugänglicher Name des Symbols, z. B. „1 Warnung, 2 Hinweise“. */
-	function meldungenText(m: Warnung[]) {
+	/** Symbol und zugänglicher Name, z. B. „1 Warnung, 2 Hinweise“. */
+	function meldungenAnzeige(m: Warnung[]) {
 		const w = m.filter((x) => x.stufe === 'warnung').length;
 		const h = m.length - w;
-		return [w && `${w} ${w === 1 ? 'Warnung' : 'Warnungen'}`, h && `${h} ${h === 1 ? 'Hinweis' : 'Hinweise'}`].filter(Boolean).join(', ');
+		const text = [w && `${w} ${w === 1 ? 'Warnung' : 'Warnungen'}`, h && `${h} ${h === 1 ? 'Hinweis' : 'Hinweise'}`].filter(Boolean).join(', ');
+		return { warnung: w > 0, text };
 	}
 	const artKlasse = (art: string | null | undefined) => `a${art?.slice(0, 2) ?? '50'}`;
 </script>
@@ -39,12 +40,12 @@
 				<span class="main">
 					<span class="title">{e.posten.name}</span>
 					<span class="detail">
-						{eur(e.posten.betragCent)} {intervallText(e.posten.intervallMonate)}{#if e.zeile.naechsteBuchung}{' · '}{datumKnapp(e.zeile.naechsteBuchung)}{/if}{#if e.posten.actualTerminplan}{' · '}<span class="quelle">Actual</span>{#if e.posten.meldungen?.length}{' '}<span
+						{eur(e.posten.betragCent)} {intervallText(e.posten.intervallMonate)}{#if e.zeile.naechsteBuchung}{' · '}{datumKnapp(e.zeile.naechsteBuchung)}{/if}{#if e.posten.actualTerminplan}{' · '}<span class="quelle">Actual</span>{#if e.posten.meldungen?.length}{@const m = meldungenAnzeige(e.posten.meldungen)}{' '}<span
 									class="meldung"
-									class:warnung={e.posten.meldungen.some((m) => m.stufe === 'warnung')}
+									class:warnung={m.warnung}
 									role="img"
-									aria-label={meldungenText(e.posten.meldungen)}
-									title={meldungenText(e.posten.meldungen)}>{e.posten.meldungen.some((m) => m.stufe === 'warnung') ? '!' : 'i'}</span>{/if}{/if}
+									aria-label={m.text}
+									title={m.text}>{m.warnung ? '!' : 'i'}</span>{/if}{/if}
 					</span>
 				</span>
 				<span class="value">{eur(e.zeile.monatlichCent)}<small>pro Monat</small></span>

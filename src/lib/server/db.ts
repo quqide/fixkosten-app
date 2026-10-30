@@ -107,6 +107,26 @@ INSERT OR IGNORE INTO personen (id, name, ueberweisungstag) VALUES ('a', 'Person
 INSERT OR IGNORE INTO gemeinschaft (id) VALUES (1);
 `;
 
+/**
+ * Führt fn in einer Transaktion aus. Scheitert auch das ROLLBACK (z. B. weil SQLite die Transaktion
+ * schon selbst beendet hat), bleibt der eigentliche Fehler sichtbar.
+ */
+export function transaktion<T>(db: DatabaseSync, fn: () => T): T {
+	db.exec('BEGIN');
+	try {
+		const ergebnis = fn();
+		db.exec('COMMIT');
+		return ergebnis;
+	} catch (e) {
+		try {
+			db.exec('ROLLBACK');
+		} catch (r) {
+			console.error('ROLLBACK fehlgeschlagen', r);
+		}
+		throw e;
+	}
+}
+
 export function oeffneDatenbank(pfad: string): DatabaseSync {
 	const db = new DatabaseSync(pfad);
 	try {
@@ -114,14 +134,9 @@ export function oeffneDatenbank(pfad: string): DatabaseSync {
 		db.exec(SCHEMA);
 		ergaenzeSpalten(db);
 		legePositionenAn(db);
-		db.exec('BEGIN');
-		try {
+		transaktion(db, () => {
 			for (const person of ['a', 'b'] as const) legeAuftraegeAn(db, person);
-			db.exec('COMMIT');
-		} catch (e) {
-			db.exec('ROLLBACK');
-			throw e;
-		}
+		});
 		return db;
 	} catch (e) {
 		db.close();
@@ -162,8 +177,7 @@ function ergaenzeSpalten(db: DatabaseSync) {
 /** Einmalig: aus Miete, Alltag und Rücklage der ersten Version frei bearbeitbare Positionen machen. */
 function legePositionenAn(db: DatabaseSync) {
 	if (db.prepare("SELECT 1 FROM merker WHERE schluessel = 'positionen'").get()) return;
-	db.exec('BEGIN');
-	try {
+	transaktion(db, () => {
 		const g = db.prepare('SELECT * FROM gemeinschaft WHERE id = 1').get() as Record<string, number>;
 		const einf = db.prepare(
 			'INSERT INTO gemeinschaft_positionen (name, art, betrag_cent, ausgang, sortierung) VALUES (?, ?, ?, ?, ?)'
@@ -175,11 +189,7 @@ function legePositionenAn(db: DatabaseSync) {
 			einf.run('Gemeinsame Fixkosten', 'fixkosten', 0, null, 3);
 		}
 		db.prepare("INSERT INTO merker (schluessel, wert) VALUES ('positionen', '1')").run();
-		db.exec('COMMIT');
-	} catch (e) {
-		db.exec('ROLLBACK');
-		throw e;
-	}
+	});
 }
 
 /**

@@ -5,7 +5,7 @@
 	import { THEMES } from '#lib/themes.ts';
 	import { SCHRITTE } from '#lib/rechnung/rundung.ts';
 	import { mitRueckmeldung, rueckgaengig, toast } from '#lib/toast.svelte.ts';
-	import { istAusblendbar } from '#lib/rechnung/terminplan.ts';
+	import { hinweisSchluessel, istAusblendbar } from '#lib/rechnung/terminplan.ts';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
@@ -396,11 +396,11 @@ ACTUAL_{p.id.toUpperCase()}_SYNC_ID=Sync-ID aus Actual (Einstellungen → Erweit
 		<div class="card"><ul class="rows">
 			{#each data.warnungen as w, i (i)}
 				<li><div class="row warnung">
-					<span class="stufe {w.stufe}" aria-label={w.stufe === 'warnung' ? 'Warnung' : 'Hinweis'}>{w.stufe === 'warnung' ? '!' : 'i'}</span>
+					<span class="stufe {w.stufe}" role="img" aria-label={w.stufe === 'warnung' ? 'Warnung' : 'Hinweis'}>{w.stufe === 'warnung' ? '!' : 'i'}</span>
 					<span class="main"><span class="title">{w.text}</span><span class="detail">{w.tun}</span>
 						{#if istAusblendbar(w)}
 							<form method="POST" action="?/ausblenden" use:enhance={mitRueckmeldung()}>
-								<button type="submit" class="textlink" name="hinweis" value="{w.terminplanId}|{w.art}">Nicht mehr anzeigen</button>
+								<button type="submit" class="textlink" name="hinweis" value={hinweisSchluessel(w.terminplanId!, w.art)}>Nicht mehr anzeigen</button>
 							</form>
 						{/if}
 					</span>
@@ -415,14 +415,14 @@ ACTUAL_{p.id.toUpperCase()}_SYNC_ID=Sync-ID aus Actual (Einstellungen → Erweit
 	<details class="section ausgeblendet">
 		<summary>Ausgeblendete Hinweise ({data.ausgeblendet.length})</summary>
 		<div class="card"><ul class="rows">
-			{#each data.ausgeblendet as h (`${h.terminplan}|${h.art}`)}
+			{#each data.ausgeblendet as h (hinweisSchluessel(h.terminplan, h.art))}
 				<li><div class="row">
 					<span class="main">
 						<span class="title">{h.meldung?.text ?? `Hinweis zu „${h.name ?? 'einem Terminplan'}“`}</span>
 						<span class="detail">{h.meldung ? h.meldung.tun : 'Trifft gerade nicht zu.'}</span>
 					</span>
 					<form method="POST" action="?/einblenden" use:enhance={mitRueckmeldung()}>
-						<button type="submit" class="textlink" name="hinweis" value="{h.terminplan}|{h.art}">Wieder anzeigen</button>
+						<button type="submit" class="textlink" name="hinweis" value={hinweisSchluessel(h.terminplan, h.art)}>Wieder anzeigen</button>
 					</form>
 				</div></li>
 			{/each}

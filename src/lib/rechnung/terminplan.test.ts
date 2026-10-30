@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
 	alsPosten,
+	hinweisSchluessel,
+	leseHinweisSchluessel,
 	mitMeldungen,
 	pruefeTerminplaene,
 	schlageRolleVor,
@@ -239,7 +241,7 @@ describe('Vorschlag für neue Terminpläne', () => {
 });
 
 describe('Art und Terminplan jeder Meldung', () => {
-	const arten = (e: PruefungEingaben) => pruefeTerminplaene(e).map((w) => [w.art, w.terminplanId]);
+	const artUndPlan = (e: PruefungEingaben) => pruefeTerminplaene(e).map((w) => [w.art, w.terminplanId]);
 
 	it('Prüfungen je Terminplan', () => {
 		const e = basis(
@@ -271,7 +273,7 @@ describe('Art und Terminplan jeder Meldung', () => {
 				['spass', { typ: 'dauerauftrag', name: 'Spaßkonto' }]
 			]
 		);
-		const a = arten(e);
+		const a = artUndPlan(e);
 		expect(a).toContainEqual(['ohne-rolle', null]);
 		expect(a).toContainEqual(['beendet', 'alt']);
 		expect(a).toContainEqual(['rhythmus', 'woche']);
@@ -297,14 +299,14 @@ describe('Art und Terminplan jeder Meldung', () => {
 		);
 		e.verknuepft = [{ name: 'Zeitung', terminplanId: 'weg' }];
 		e.gehaltKategorie = null;
-		expect(arten(e)).toEqual([
+		expect(artUndPlan(e)).toEqual([
 			['duplikat', 'netflix2'],
 			['geloescht', 'weg'],
 			['gehalt-kategorie', null]
 		]);
 		e.gehaltKategorie = 'gehalt';
 		e.letztesGehalt = null;
-		expect(arten(e)).toContainEqual(['gehalt-leer', null]);
+		expect(artUndPlan(e)).toContainEqual(['gehalt-leer', null]);
 	});
 
 	it('Aufteilung des Gemeinschafts-Dauerauftrags', () => {
@@ -313,7 +315,7 @@ describe('Art und Terminplan jeder Meldung', () => {
 			const e = basis([plan({ id: 'gem', betragCent: 69674, aufteilung })], [['gem', rolle]]);
 			e.dauerauftraege = [{ name: 'Gemeinschaftskonto', zielkonto: '', betragCent: 69674 }];
 			e.gemeinschaft = { auftrag: 'Gemeinschaftskonto', teile: [{ name: 'Miete', kategorieId: 'miete', betragCent: 69674 }] };
-			return arten(e);
+			return artUndPlan(e);
 		};
 		expect(mit(null)).toEqual([['split-fehlt', 'gem']]);
 		expect(
@@ -377,5 +379,26 @@ describe('Meldungen am Posten', () => {
 			meldungen
 		);
 		expect(posten.map((p) => p.meldungen.map((w) => w.art))).toEqual([['duplikat'], ['duplikat']]);
+	});
+});
+
+describe('Schlüssel einer Ausblendung', () => {
+	it('Duplikat trägt unabhängig von der Reihenfolge aus Actual dieselbe ID', () => {
+		const a = plan({ id: 'netflix1', empfaenger: 'Netflix' });
+		const b = plan({ id: 'netflix2', empfaenger: 'Netflix' });
+		const rollen: [string, Rolle][] = [
+			['netflix1', fix],
+			['netflix2', fix]
+		];
+		const id = (plaene: Terminplan[]) => pruefeTerminplaene(basis(plaene, rollen)).map((w) => [w.terminplanId, w.weitereTerminplanIds]);
+		expect(id([a, b])).toEqual([['netflix2', ['netflix1']]]);
+		expect(id([b, a])).toEqual([['netflix2', ['netflix1']]]);
+	});
+
+	it('hinweisSchluessel und leseHinweisSchluessel passen zusammen', () => {
+		expect(leseHinweisSchluessel(hinweisSchluessel('abc-1', 'ungefaehr'))).toEqual({ terminplan: 'abc-1', art: 'ungefaehr' });
+		expect(leseHinweisSchluessel('ohne-trenner')).toBeNull();
+		expect(leseHinweisSchluessel('|ungefaehr')).toBeNull();
+		expect(leseHinweisSchluessel('abc|')).toBeNull();
 	});
 });

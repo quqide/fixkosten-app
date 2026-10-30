@@ -16,6 +16,7 @@ beforeEach(() => {
 	vi.stubEnv('DATA_DIR', ordner);
 });
 afterEach(() => {
+	vi.restoreAllMocks();
 	vi.unstubAllEnvs();
 	vi.doUnmock('node:fs');
 	rmSync(ordner, { recursive: true, force: true });
@@ -82,6 +83,7 @@ describe('Healthcheck', () => {
 		const antwort = GET();
 		expect(antwort.status).toBe(503);
 		expect(await antwort.json()).toEqual({ status: 'fehler' });
-		fehlerLog.mockRestore();
+		// Die Details stehen nur im Log.
+		expect(fehlerLog).toHaveBeenCalledWith('Healthcheck fehlgeschlagen:', expect.stringContaining(ordner));
 	});
 });
