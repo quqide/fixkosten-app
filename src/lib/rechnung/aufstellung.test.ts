@@ -16,6 +16,11 @@ const eingaben = (modus: Kontenmodus = 1, nettoCent = 345000): AufstellungEingab
 const basis = eingaben();
 
 describe('Monatsaufstellung', () => {
+	it('warnt, wenn in Modus 1 eine Fixkosten-Rate überwiesen wird', () => {
+		const e = { ...basis, auftraege: [{ name: 'Fixkosten', zielkonto: 'Fixkosten-Konto', bausteine: [{ typ: 'fixkosten' as const }] }, ...basis.auftraege] };
+		expect(berechneAufstellung(e).warnungen.some((w) => w.includes('doppelt'))).toBe(true);
+	});
+
 	it('Modus 1: Spaßkonto bekommt den abgerundeten Überschuss, Fixkosten bleiben auf dem Gehaltskonto', () => {
 		const a = berechneAufstellung(basis);
 		expect(a.dauerauftraege[0]).toEqual({ name: 'ETF-Sparplan', zielkonto: 'Depot', betragCent: 69000 });

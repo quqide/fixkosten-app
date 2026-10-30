@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { oeffneDatenbank, setzeDatenbank } from './db';
 import {
 	aendereGemeinschaft,
+	aendereModus,
 	aenderePerson,
 	exportiere,
 	importiere,
@@ -29,6 +30,15 @@ const icloud: PostenEintrag = {
 beforeEach(() => setzeDatenbank(oeffneDatenbank(':memory:')));
 
 describe('Datenhaltung', () => {
+	it('macht Kontenmodell und angepasste Daueraufträge gemeinsam rückgängig', () => {
+		const vorher = ladeAuftraege('a').map((a) => a.name);
+		const id = aendereModus('a', 2, [{ name: 'Fixkosten', zielkonto: 'Fixkosten-Konto', bausteine: [{ typ: 'fixkosten' }] }], 'a');
+		expect(ladePerson('a').modus).toBe(2);
+		macheRueckgaengig(id, 'a');
+		expect(ladePerson('a').modus).toBe(1);
+		expect(ladeAuftraege('a').map((a) => a.name)).toEqual(vorher);
+	});
+
 	it('legt zwei Personen und ein leeres Gemeinschaftskonto an', () => {
 		expect(ladePerson('a').name).toBe('Person 1');
 		expect(ladePerson('b').ueberweisungstag).toBe(7);
