@@ -8,7 +8,10 @@ import {
 	exportiere,
 	importiere,
 	ladeAuftraege,
+	ladeAusblendungen,
 	ladeGemeinschaft,
+	NichtAusblendbar,
+	setzeAusblendung,
 	speichereAuftraege,
 	ladePerson,
 	ladePosten,
@@ -190,5 +193,36 @@ describe('Datenhaltung', () => {
 
 	it('lehnt Dateien ab, die keine Sicherung sind', () => {
 		expect(() => importiere({ foo: 1 } as never, 'a')).toThrow('keine Sicherung');
+	});
+
+	it('blendet Hinweise je Person aus und macht das rückgängig', () => {
+		const h = { terminplan: 'netflix', art: 'ungefaehr' as const };
+		const undo = setzeAusblendung('a', h, true, 'a', 'Hinweis ausgeblendet');
+		expect(ladeAusblendungen('a')).toEqual([h]);
+		expect(ladeAusblendungen('b')).toEqual([]);
+		macheRueckgaengig(undo, 'a');
+		expect(ladeAusblendungen('a')).toEqual([]);
+
+		setzeAusblendung('a', h, true, 'a', 'Hinweis ausgeblendet');
+		const wieder = setzeAusblendung('a', h, false, 'a', 'Hinweis wieder eingeblendet');
+		expect(ladeAusblendungen('a')).toEqual([]);
+		macheRueckgaengig(wieder, 'a');
+		expect(ladeAusblendungen('a')).toEqual([h]);
+	});
+
+	it('lehnt das Ausblenden von Warnungen und Sammelmeldungen ab', () => {
+		expect(() => setzeAusblendung('a', { terminplan: 'netflix', art: 'preisabweichung' }, true, 'a', 'x')).toThrow(NichtAusblendbar);
+		expect(() => setzeAusblendung('a', { terminplan: '', art: 'ungefaehr' }, true, 'a', 'x')).toThrow(NichtAusblendbar);
+		expect(ladeAusblendungen('a')).toEqual([]);
+	});
+
+	it('nimmt Ausblendungen in die Sicherung mit', () => {
+		setzeAusblendung('a', { terminplan: 'netflix', art: 'duplikat' }, true, 'a', 'x');
+		setzeAusblendung('b', { terminplan: 'strom', art: 'ungefaehr' }, true, 'b', 'x');
+		const sicherung = JSON.parse(JSON.stringify(exportiere()));
+		setzeDatenbank(oeffneDatenbank(':memory:'));
+		importiere(sicherung, 'a');
+		expect(ladeAusblendungen('a')).toEqual([{ terminplan: 'netflix', art: 'duplikat' }]);
+		expect(ladeAusblendungen('b')).toEqual([{ terminplan: 'strom', art: 'ungefaehr' }]);
 	});
 });

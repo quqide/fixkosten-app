@@ -54,6 +54,23 @@ export type WarnungArt =
 	| 'gehalt-kategorie'
 	| 'gehalt-leer';
 
+/** Arten, die immer nur Hinweise sind und sich darum je Terminplan ausblenden lassen. */
+export const AUSBLENDBARE_ARTEN: ReadonlySet<WarnungArt> = new Set<WarnungArt>([
+	'beendet',
+	'sonderregel-tag',
+	'ungefaehr',
+	'umbuchung',
+	'auftrag-fehlt',
+	'split-fehlt',
+	'split-unbekannt',
+	'duplikat',
+	'geloescht'
+]);
+
+/** Lässt sich diese Meldung ausblenden? Nur Hinweise zu genau einem Terminplan. */
+export const istAusblendbar = (w: Pick<Warnung, 'stufe' | 'art' | 'terminplanId'>) =>
+	w.stufe === 'hinweis' && w.terminplanId != null && AUSBLENDBARE_ARTEN.has(w.art);
+
 export interface Warnung {
 	art: WarnungArt;
 	stufe: 'warnung' | 'hinweis';

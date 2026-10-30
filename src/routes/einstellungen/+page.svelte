@@ -5,6 +5,7 @@
 	import { THEMES } from '#lib/themes.ts';
 	import { SCHRITTE } from '#lib/rechnung/rundung.ts';
 	import { mitRueckmeldung, rueckgaengig, toast } from '#lib/toast.svelte.ts';
+	import { istAusblendbar } from '#lib/rechnung/terminplan.ts';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
@@ -396,12 +397,37 @@ ACTUAL_{p.id.toUpperCase()}_SYNC_ID=Sync-ID aus Actual (Einstellungen → Erweit
 			{#each data.warnungen as w, i (i)}
 				<li><div class="row warnung">
 					<span class="stufe {w.stufe}" aria-label={w.stufe === 'warnung' ? 'Warnung' : 'Hinweis'}>{w.stufe === 'warnung' ? '!' : 'i'}</span>
-					<span class="main"><span class="title">{w.text}</span><span class="detail">{w.tun}</span></span>
+					<span class="main"><span class="title">{w.text}</span><span class="detail">{w.tun}</span>
+						{#if istAusblendbar(w)}
+							<form method="POST" action="?/ausblenden" use:enhance={mitRueckmeldung()}>
+								<button type="submit" class="textlink" name="hinweis" value="{w.terminplanId}|{w.art}">Nicht mehr anzeigen</button>
+							</form>
+						{/if}
+					</span>
 				</div></li>
 			{/each}
 		</ul></div>
 		<p class="note">Die App ändert nichts in Actual. Nach einer Korrektur dort einfach neu abrufen.</p>
 	</div>
+{/if}
+
+{#if data.ausgeblendet.length}
+	<details class="section ausgeblendet">
+		<summary>Ausgeblendete Hinweise ({data.ausgeblendet.length})</summary>
+		<div class="card"><ul class="rows">
+			{#each data.ausgeblendet as h (`${h.terminplan}|${h.art}`)}
+				<li><div class="row">
+					<span class="main">
+						<span class="title">{h.meldung?.text ?? `Hinweis zu „${h.name ?? 'einem Terminplan'}“`}</span>
+						<span class="detail">{h.meldung ? h.meldung.tun : 'Trifft gerade nicht zu.'}</span>
+					</span>
+					<form method="POST" action="?/einblenden" use:enhance={mitRueckmeldung()}>
+						<button type="submit" class="textlink" name="hinweis" value="{h.terminplan}|{h.art}">Wieder anzeigen</button>
+					</form>
+				</div></li>
+			{/each}
+		</ul></div>
+	</details>
 {/if}
 
 {#if z && z.terminplaene.length}
@@ -502,6 +528,8 @@ ACTUAL_{p.id.toUpperCase()}_SYNC_ID=Sync-ID aus Actual (Einstellungen → Erweit
 	.stufe.warnung { background: var(--warm-soft); color: var(--warm); }
 	.stufe.hinweis { background: var(--calm-soft); color: var(--calm); }
 	.warnung .title { font-weight: 600; }
+	.warnung form { margin-top: 2px; }
+	.ausgeblendet summary { cursor: pointer; font-weight: 600; color: var(--secondary); padding: 4px; min-height: 44px; display: flex; align-items: center; }
 	.zuordnung { flex-wrap: wrap; }
 	.zuordnung .main { flex: 1 1 200px; }
 	.zuordnung select { flex: 1 1 220px; max-width: 100%; font-size: 15px; background: var(--fill); border: 2px solid transparent; border-radius: 10px; padding: 8px 10px; min-height: 44px; color: var(--label); }

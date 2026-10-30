@@ -1,6 +1,6 @@
 import { heute } from '#lib/rechnung/datum.ts';
 import { mitMeldungen } from '#lib/rechnung/terminplan.ts';
-import { angemeldet, postenAktionen } from '#lib/server/aktionen.ts';
+import { angemeldet, hinweisAktionen, postenAktionen } from '#lib/server/aktionen.ts';
 import { warnungenFuer } from '#lib/server/actualAbgleich.ts';
 import { postenMitZeilen } from '#lib/server/ansicht.ts';
 import { ladePerson, ladePosten, letzteAenderung } from '#lib/server/repo.ts';
@@ -17,4 +17,4 @@ export const load: PageServerLoad = ({ locals }) => {
 	};
 };
 
-export const actions: Actions = postenAktionen((person) => person);
+export const actions: Actions = { ...postenAktionen((person) => person), ...hinweisAktionen };
