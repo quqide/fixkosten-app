@@ -39,7 +39,7 @@ export function gemeinschaftAnsicht(stichtag: string) {
 }
 
 /** Jeder Posten mit seiner berechneten Zeile und den Zeilen seiner Beteiligungen. */
-export function postenMitZeilen(posten: PostenEintrag[], stichtag: string, ueberweisungstag: number) {
+export function postenMitZeilen<P extends PostenEintrag>(posten: P[], stichtag: string, ueberweisungstag: number) {
 	return posten.map((p) => {
 		const [haupt, ...beteiligungen] = berechneFixkosten([p], { stichtag, ueberweisungstag }).zeilen;
 		return { posten: p, zeile: haupt, beteiligungen };

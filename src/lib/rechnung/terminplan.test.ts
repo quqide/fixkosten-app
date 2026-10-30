@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	alsPosten,
+	mitMeldungen,
 	pruefeTerminplaene,
 	schlageRolleVor,
 	type PruefungEingaben,
@@ -324,5 +325,57 @@ describe('Art und Terminplan jeder Meldung', () => {
 			['split-abweichung', 'gem'],
 			['split-unbekannt', 'gem']
 		]);
+	});
+});
+
+describe('Meldungen am Posten', () => {
+	it('ordnet Meldungen über die Terminplan-ID zu', () => {
+		const e = basis(
+			[plan({ id: 'netflix', letzteBuchung: { datum: '2026-10-15', betragCent: 1399 } }), plan({ id: 'spotify' })],
+			[
+				['netflix', fix],
+				['spotify', fix]
+			]
+		);
+		e.verknuepft = [{ name: 'Zeitung', terminplanId: 'weg' }];
+		const meldungen = pruefeTerminplaene(e);
+		const posten = mitMeldungen(
+			[
+				{ name: 'Netflix', actualTerminplan: 'netflix' },
+				{ name: 'Spotify', actualTerminplan: 'spotify' },
+				{ name: 'Zeitung', actualTerminplan: 'weg' },
+				{ name: 'Von Hand', actualTerminplan: null },
+				{ name: 'Ohne Feld' }
+			],
+			meldungen
+		);
+		expect(posten.map((p) => [p.name, p.meldungen.map((w) => w.art)])).toEqual([
+			['Netflix', ['preisabweichung']],
+			['Spotify', []],
+			['Zeitung', ['geloescht']],
+			['Von Hand', []],
+			['Ohne Feld', []]
+		]);
+		expect(posten[0].meldungen[0]).toMatchObject({ stufe: 'warnung', tun: 'Preisänderung? Betrag im Terminplan anpassen.' });
+	});
+
+	it('zeigt ein Duplikat an beiden Posten', () => {
+		const e = basis(
+			[plan({ id: 'netflix1', empfaenger: 'Netflix' }), plan({ id: 'netflix2', empfaenger: 'Netflix' })],
+			[
+				['netflix1', fix],
+				['netflix2', fix]
+			]
+		);
+		const meldungen = pruefeTerminplaene(e);
+		expect(meldungen).toMatchObject([{ art: 'duplikat', terminplanId: 'netflix2', weitereTerminplanIds: ['netflix1'] }]);
+		const posten = mitMeldungen(
+			[
+				{ name: 'Netflix 1', actualTerminplan: 'netflix1' },
+				{ name: 'Netflix 2', actualTerminplan: 'netflix2' }
+			],
+			meldungen
+		);
+		expect(posten.map((p) => p.meldungen.map((w) => w.art))).toEqual([['duplikat'], ['duplikat']]);
 	});
 });

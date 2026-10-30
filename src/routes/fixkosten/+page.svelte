@@ -6,6 +6,7 @@
 	import PostenListe from '#lib/components/PostenListe.svelte';
 	import { eur, zeitpunkt } from '#lib/format.ts';
 	import type { FixkostenPosten } from '#lib/rechnung/fixkosten.ts';
+	import type { Warnung } from '#lib/rechnung/terminplan.ts';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -20,7 +21,7 @@
 	const sichtbar = $derived(art ? data.eintraege.filter((e) => e.posten.art?.startsWith(art)) : data.eintraege);
 	const summe = $derived(data.eintraege.reduce((s, e) => s + e.zeile.monatlichCent + e.beteiligungen.reduce((t, b) => t + b.monatlichCent, 0), 0));
 
-	let bearbeitet = $state<(FixkostenPosten & { id?: number }) | null>(null);
+	let bearbeitet = $state<(FixkostenPosten & { id?: number; meldungen?: Warnung[] }) | null>(null);
 	const neu = () => (bearbeitet = { name: '', betragCent: 0, intervallMonate: 1, art: '30 (Freizeit)', beteiligungen: [] });
 
 	// Link „Erste Fixkosten anlegen“ öffnet direkt den Dialog.
