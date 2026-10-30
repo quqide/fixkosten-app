@@ -70,6 +70,22 @@ const ziel = (r: Rueckstellung) => (r.zielkonto ?? '').trim();
 /** Ziele vergleichen ohne Rücksicht auf Groß- und Kleinschreibung, z. B. WKN „a0rpwh“ und „A0RPWH“. */
 const gleichesZiel = (a: string, b: string) => a.trim().toLocaleUpperCase('de-DE') === b.trim().toLocaleUpperCase('de-DE');
 
+/**
+ * Macht Auftragsnamen eindeutig (ohne Rücksicht auf Groß- und Kleinschreibung), indem spätere
+ * Doppel einen Zusatz wie „(2)“ bekommen. Terminpläne werden über den Namen zugeordnet.
+ */
+export function eindeutigeNamen<T extends { name: string }>(liste: T[]): T[] {
+	const vergeben = new Set<string>();
+	const schluessel = (n: string) => n.trim().toLocaleLowerCase('de-DE');
+	return liste.map((a) => {
+		let name = a.name.trim();
+		if (!name) return a;
+		for (let n = 2; vergeben.has(schluessel(name)); n++) name = `${a.name.trim()} (${n})`;
+		vergeben.add(schluessel(name));
+		return name === a.name ? a : { ...a, name };
+	});
+}
+
 /** Die Daueraufträge, wie sie die App ohne eigene Einrichtung anlegt. */
 export function standardAuftraege(
 	modus: Kontenmodus,
@@ -96,7 +112,8 @@ export function standardAuftraege(
 	if (modus === 1) {
 		liste.push({ name: 'Spaßkonto', zielkonto: 'Spaßkonto', bausteine: [{ typ: 'rest' }], rundung: STANDARD_REST_RUNDUNG });
 	}
-	return liste;
+	// Eine Rücklage kann z. B. „Spaßkonto“ heißen.
+	return eindeutigeNamen(liste);
 }
 
 export function bausteinWert(b: Baustein, e: AufstellungEingaben): number {

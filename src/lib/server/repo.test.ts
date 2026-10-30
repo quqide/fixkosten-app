@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db, oeffneDatenbank, setzeDatenbank } from './db';
+import { eindeutigeNamen } from '#lib/rechnung/aufstellung.ts';
 import {
 	aendereGemeinschaft,
 	aendereModus,
@@ -147,6 +148,36 @@ describe('Datenhaltung', () => {
 		expect(() => importiere(sicherung, 'a')).toThrow('ungültige Daueraufträge');
 		expect(exportiere()).toEqual({ ...vorher, erstellt: expect.any(String) });
 		expect(ladePosten('a')).toMatchObject([{ name: 'iCloud' }]);
+	});
+
+	it('erzeugt keine doppelten Namen und spielt die eigene Sicherung wieder ein', () => {
+		// Ältere Sicherung ohne Daueraufträge, mit einer Rücklage, die wie ein Standard-Auftrag heißt.
+		const alt = JSON.parse(JSON.stringify(exportiere()));
+		delete alt.auftraege;
+		alt.rueckstellungen = [{ person: 'a', name: 'Spaßkonto', betragCent: 1000, zielkonto: 'Tagesgeld' }];
+		importiere(alt, 'a');
+		const namen = ladeAuftraege('a').map((x) => x.name);
+		expect(namen).toEqual(['ETF-Sparplan', 'Spaßkonto', 'Gemeinschaftskonto', 'Spaßkonto (2)']);
+
+		// Kontenmodell wechseln, wenn schon ein Auftrag „Fixkosten“ ohne Rate existiert.
+		speichereAuftraege('a', [...ladeAuftraege('a'), { name: 'Fixkosten', zielkonto: 'Tagesgeld', bausteine: [{ typ: 'fest', betragCent: 100 }] }], 'a');
+		aendereModus('a', 2, eindeutigeNamen([{ name: 'Fixkosten', zielkonto: 'Fixkosten-Konto', bausteine: [{ typ: 'fixkosten' }] }, ...ladeAuftraege('a')]), 'a');
+		expect(ladeAuftraege('a').map((x) => x.name)).toContain('Fixkosten (2)');
+
+		const sicherung = JSON.parse(JSON.stringify(exportiere()));
+		setzeDatenbank(oeffneDatenbank(':memory:'));
+		expect(() => importiere(sicherung, 'a')).not.toThrow();
+		expect(ladeAuftraege('a').map((x) => x.name)).toEqual(sicherung.auftraege.a.map((x: { name: string }) => x.name));
+	});
+
+	it('spielt Sicherungen mit doppelten Namen aus älteren Ständen trotzdem ein', () => {
+		const s = JSON.parse(JSON.stringify(exportiere()));
+		s.auftraege.a = [
+			{ name: 'Fixkosten', zielkonto: 'X', bausteine: [{ typ: 'fixkosten' }] },
+			{ name: 'Fixkosten', zielkonto: 'Y', bausteine: [{ typ: 'rest' }] }
+		];
+		importiere(s, 'a');
+		expect(ladeAuftraege('a').map((x) => x.name)).toEqual(['Fixkosten', 'Fixkosten (2)']);
 	});
 
 	it('verwirft unbekannte Symbole beim Import', () => {

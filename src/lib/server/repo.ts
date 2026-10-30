@@ -1,6 +1,6 @@
 import type { Abbuchungsart, Art, Beteiligung, FixkostenPosten } from '#lib/rechnung/fixkosten.ts';
 import type { Aufteilungsmodell } from '#lib/rechnung/gemeinschaft.ts';
-import { type AuftragKonfig, type Baustein, type Kontenmodus } from '#lib/rechnung/aufstellung.ts';
+import { eindeutigeNamen, type AuftragKonfig, type Baustein, type Kontenmodus } from '#lib/rechnung/aufstellung.ts';
 import type { Rundung } from '#lib/rechnung/rundung.ts';
 import type { Abgleich } from '#lib/rechnung/abgleich.ts';
 import { type RueckstellungKonfig, type RueckstellungsArt } from '#lib/rechnung/rueckstellung.ts';
@@ -671,7 +671,8 @@ export function importiere(s: Sicherung, wer: PersonId) {
 	for (const id of ['a', 'b'] as const) {
 		const liste = s.auftraege?.[id];
 		if (liste == null) continue;
-		const ergebnis = pruefeAuftraege(liste);
+		// Ältere Stände konnten doppelte Namen erzeugen; die eigene Sicherung soll trotzdem wiederherstellbar sein.
+		const ergebnis = pruefeAuftraege(Array.isArray(liste) ? eindeutigeNamen(liste.map((a) => ({ ...a, name: String(a?.name ?? '') }))) : liste);
 		if ('fehler' in ergebnis) {
 			const name = s.personen.find((p) => p?.id === id)?.name ?? id;
 			throw new Error(`Die Sicherung enthält ungültige Daueraufträge von ${name}: ${Object.values(ergebnis.fehler)[0]}`);

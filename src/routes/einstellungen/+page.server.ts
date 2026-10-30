@@ -1,6 +1,6 @@
 import { fail } from '@sveltejs/kit';
 import { leseBetrag, leseGanzzahl, leseProzent } from '#lib/eingabe.ts';
-import { STANDARD_REST_RUNDUNG, type AuftragKonfig } from '#lib/rechnung/aufstellung.ts';
+import { eindeutigeNamen, STANDARD_REST_RUNDUNG, type AuftragKonfig } from '#lib/rechnung/aufstellung.ts';
 import { leseAuftraege } from '#lib/server/formular.ts';
 import { heute } from '#lib/rechnung/datum.ts';
 import { rueckstellungenMitStand } from '#lib/server/ansicht.ts';
@@ -93,7 +93,7 @@ export const actions: Actions = {
 				auftraege.push({ name: 'Spaßkonto', zielkonto: 'Spaßkonto', bausteine: [{ typ: 'rest' }], rundung: STANDARD_REST_RUNDUNG });
 			}
 		}
-		const undoId = aendereModus(wer, modus, auftraege, wer);
+		const undoId = aendereModus(wer, modus, eindeutigeNamen(auftraege), wer);
 		return { meldung: 'Kontenmodell geändert, Daueraufträge angepasst.', undoId };
 	},
 
