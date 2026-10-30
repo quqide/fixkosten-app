@@ -103,13 +103,29 @@ function ergaenzeSpalten(db: DatabaseSync) {
 	}
 }
 
+/** Der Datenordner fehlt oder ist für den Container nicht beschreibbar. */
+export class DatenordnerFehler extends Error {
+	constructor(ordner: string, ursache: unknown) {
+		const wer = process.getuid ? ` (Benutzer ${process.getuid()}, Gruppe ${process.getgid?.()})` : '';
+		super(
+			`Die Datenbank in ${ordner} lässt sich nicht öffnen: ${(ursache as Error)?.message ?? ursache}. ` +
+				`Der Ordner muss für den Container${wer} beschreibbar sein.`,
+			{ cause: ursache }
+		);
+	}
+}
+
 let instanz: DatabaseSync | undefined;
 
 export function db(): DatabaseSync {
 	if (!instanz) {
 		const ordner = process.env.DATA_DIR ?? 'data';
-		mkdirSync(ordner, { recursive: true });
-		instanz = oeffneDatenbank(join(ordner, 'fixkosten.db'));
+		try {
+			mkdirSync(ordner, { recursive: true });
+			instanz = oeffneDatenbank(join(ordner, 'fixkosten.db'));
+		} catch (e) {
+			throw new DatenordnerFehler(ordner, e);
+		}
 	}
 	return instanz;
 }

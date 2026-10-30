@@ -1,5 +1,5 @@
-import type { Handle } from '@sveltejs/kit/hooks';
-import type { PersonId } from '#lib/server/db.ts';
+import type { Handle, HandleServerError } from '@sveltejs/kit/hooks';
+import { DatenordnerFehler, type PersonId } from '#lib/server/db.ts';
 import { ladePerson } from '#lib/server/repo.ts';
 import { STANDARD_THEME, THEMES } from '#lib/themes.ts';
 
@@ -33,4 +33,11 @@ export const handle: Handle = async ({ event, resolve }) => {
 		transformPageChunk: ({ html }) =>
 			html.replace('<html lang="de">', `<html lang="de" data-palette="${palette}"${hell}>`)
 	});
+};
+
+export const handleError: HandleServerError = ({ error }) => {
+	console.error(error);
+	// Einrichtungsfehler zeigen wir an, damit man sie ohne Container-Log beheben kann.
+	if (error instanceof DatenordnerFehler) return { message: error.message };
+	return { message: 'Da ist etwas schiefgelaufen. Details stehen im Container-Log.' };
 };
