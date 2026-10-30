@@ -2,7 +2,8 @@
 	import { enhance } from '$app/forms';
 	import { ABBUCHUNGSARTEN, ARTEN } from '#lib/rechnung/fixkosten.ts';
 	import type { FixkostenPosten } from '#lib/rechnung/fixkosten.ts';
-	import { betragFeld, intervallText } from '#lib/format.ts';
+	import { betragFeld, datumLang, intervallText } from '#lib/format.ts';
+	import { letzterKuendigungstag, type FristEinheit } from '#lib/rechnung/vertrag.ts';
 	import { zeigeToast } from '#lib/toast.svelte.ts';
 	import type { SubmitFunction } from '$app/forms';
 	import { heute } from '#lib/rechnung/datum.ts';
@@ -19,6 +20,32 @@
 	let fehler = $state<Record<string, string>>({});
 	let beteiligungen = $state<{ name: string; betrag: string; tag: string }[]>([]);
 	let name = $state('');
+	// Vertragsangaben, gebunden für den Hinweis zum letzten Kündigungstag.
+	let vEnde = $state('');
+	let vFrist = $state('');
+	let vEinheit = $state<FristEinheit>('monate');
+	let vVerl = $state('');
+	let vKunde = $state('');
+	let vNotiz = $state('');
+	const vertragOffen = $derived(!!(vEnde || vFrist || vVerl || vKunde || vNotiz) || Object.keys(fehler).some((k) => k.startsWith('v_')));
+	const kuendigung = $derived.by(() => {
+		const anzahl = Number(vFrist);
+		const verl = Number(vVerl);
+		try {
+			return letzterKuendigungstag(
+				{
+					laufzeitEnde: vEnde || null,
+					kuendigungsfrist: vFrist && Number.isInteger(anzahl) && anzahl >= 0 ? { anzahl, einheit: vEinheit } : null,
+					verlaengerungMonate: vVerl && Number.isInteger(verl) && verl > 0 ? verl : null,
+					kundennummer: null,
+					notiz: null
+				},
+				heute()
+			);
+		} catch {
+			return null;
+		}
+	});
 	let icon = $state('');
 	const vorschlag = $derived(schlageIconVor(name));
 	const iconListe = Object.entries(POSTEN_ICONS) as [PostenIcon, { name: string; svg: string }][];
@@ -32,6 +59,13 @@
 			fehler = {};
 			name = posten.name ?? '';
 			icon = posten.icon ?? '';
+			const v = posten.vertrag;
+			vEnde = v?.laufzeitEnde ?? '';
+			vFrist = v?.kuendigungsfrist ? String(v.kuendigungsfrist.anzahl) : '';
+			vEinheit = v?.kuendigungsfrist?.einheit ?? 'monate';
+			vVerl = v?.verlaengerungMonate ? String(v.verlaengerungMonate) : '';
+			vKunde = v?.kundennummer ?? '';
+			vNotiz = v?.notiz ?? '';
 			beteiligungen = (posten.beteiligungen ?? []).map((b) => ({
 				name: b.name,
 				betrag: betragFeld(b.betragCent),
@@ -193,6 +227,52 @@
 					</div>
 				</div>
 
+				<div class="card">
+					<details class="field vertrag" open={vertragOffen}>
+						<summary>
+							<span class="label">Vertrag</span>
+							<span class="help">{kuendigung ? (kuendigung.status === 'abgelaufen' ? 'Laufzeit ist vorbei' : `Kündigen bis ${datumLang(kuendigung.letzterKuendigungstag)}`) : 'Laufzeit, Kündigungsfrist, Kundennummer'}</span>
+						</summary>
+						<span class="help">Nur für dich in der App{ausActual ? ', Actual kennt diese Angaben nicht' : ''}. Alles ist freiwillig.</span>
+						<div class="inline-fields">
+							<label class="mini"><span>Läuft bis</span>
+								<input type="date" name="v_ende" bind:value={vEnde} aria-invalid={!!fehler.v_ende} />
+							</label>
+							<label class="mini"><span>Verlängert sich um</span>
+								<span class="mit-einheit"><input name="v_verlaengerung" bind:value={vVerl} inputmode="numeric" placeholder="z. B. 12" aria-label="Automatische Verlängerung in Monaten" aria-invalid={!!fehler.v_verlaengerung} /><span>Monate</span></span>
+							</label>
+						</div>
+						{#if fehler.v_ende}<span class="error">{fehler.v_ende}</span>{/if}
+						{#if fehler.v_verlaengerung}<span class="error">{fehler.v_verlaengerung}</span>{/if}
+						<label class="mini"><span>Kündigungsfrist</span>
+							<span class="mit-einheit">
+								<input name="v_frist" bind:value={vFrist} inputmode="numeric" placeholder="z. B. 3" aria-label="Kündigungsfrist" aria-invalid={!!fehler.v_frist} />
+								<select name="v_einheit" bind:value={vEinheit} aria-label="Einheit der Kündigungsfrist">
+									<option value="tage">Tage</option>
+									<option value="wochen">Wochen</option>
+									<option value="monate">Monate</option>
+								</select>
+							</span>
+						</label>
+						{#if fehler.v_frist}<span class="error">{fehler.v_frist}</span>{/if}
+						{#if kuendigung}
+							<span class="help">
+								{kuendigung.status === 'abgelaufen'
+									? `Die Laufzeit endete am ${datumLang(kuendigung.laufzeitEnde)} und verlängert sich nicht.`
+									: `Läuft bis ${datumLang(kuendigung.laufzeitEnde)}. Kündigen spätestens am ${datumLang(kuendigung.letzterKuendigungstag)}.`}
+							</span>
+						{/if}
+						<label class="mini"><span>Kundennummer</span>
+							<input name="v_kundennummer" bind:value={vKunde} maxlength="200" autocomplete="off" aria-invalid={!!fehler.v_kundennummer} />
+						</label>
+						{#if fehler.v_kundennummer}<span class="error">{fehler.v_kundennummer}</span>{/if}
+						<label class="mini"><span>Notiz</span>
+							<textarea name="v_notiz" bind:value={vNotiz} maxlength="200" rows="2" aria-invalid={!!fehler.v_notiz}></textarea>
+						</label>
+						{#if fehler.v_notiz}<span class="error">{fehler.v_notiz}</span>{/if}
+					</details>
+				</div>
+
 				<div class="sheet-actions">
 					<button type="button" class="secondary" onclick={schliessen}>Abbrechen</button>
 					<button type="submit" class="primary">{neu ? 'Hinzufügen' : 'Änderungen sichern'}</button>
@@ -210,6 +290,14 @@
 <style>
 	.aus-actual { margin: 0 4px 12px; }
 	.meldungen { margin-bottom: 12px; }
+	.vertrag { display: grid; gap: 10px; }
+	.vertrag summary { cursor: pointer; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-height: 32px; }
+	.vertrag .mini { display: grid; gap: 4px; }
+	.vertrag .mini > span:first-child { font-size: 13px; color: var(--secondary); font-weight: 600; }
+	.vertrag .mit-einheit { display: flex; gap: 6px; align-items: center; }
+	.vertrag .mit-einheit input { flex: 0 0 6em; min-width: 0; width: 6em; }
+	.vertrag .mit-einheit select { flex: 1; width: auto; min-width: 0; }
+	.vertrag textarea { font: inherit; resize: vertical; }
 	.stufe { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; flex: none; }
 	.stufe.warnung { background: var(--warm-soft); color: var(--warm); }
 	.stufe.hinweis { background: var(--calm-soft); color: var(--calm); }

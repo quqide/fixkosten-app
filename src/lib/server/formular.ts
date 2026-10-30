@@ -1,6 +1,7 @@
 import { istPostenIcon } from '#lib/postenIcons.ts';
 import { ABBUCHUNGSARTEN, ARTEN, type Abbuchungsart, type Art } from '#lib/rechnung/fixkosten.ts';
 import { parseDatum } from '#lib/rechnung/datum.ts';
+import { FRIST_EINHEITEN, istLeer, type FristEinheit, type Vertrag } from '#lib/rechnung/vertrag.ts';
 import { leseBetrag, leseGanzzahl } from '#lib/eingabe.ts';
 import type { AuftragKonfig, Baustein } from '#lib/rechnung/aufstellung.ts';
 import { SCHRITTE, type Rundung } from '#lib/rechnung/rundung.ts';
@@ -52,9 +53,12 @@ export function lesePosten(f: FormData, besitzer: Besitzer): { eintrag: PostenEi
 		else beteiligungen.push({ name: bName, betragCent: bBetrag, eingangstag: bTag });
 	});
 
+	const vertrag = leseVertrag(f, fehler);
+
 	if (Object.keys(fehler).length) return { fehler };
 	return {
 		eintrag: {
+			vertrag,
 			id: idText ? Number(idText) : undefined,
 			besitzer,
 			name,
@@ -69,6 +73,80 @@ export function lesePosten(f: FormData, besitzer: Besitzer): { eintrag: PostenEi
 			beteiligungen
 		}
 	};
+}
+
+// ---------- Vertrag ----------
+
+export const VERTRAG_TEXT_MAX = 200;
+
+/**
+ * Prüft Vertragsangaben in gespeicherter Form (z. B. aus einer Sicherung). Fehler: ein Satz je Feld.
+ * Leere Angaben ergeben null.
+ */
+export function pruefeVertrag(roh: unknown): { vertrag: Vertrag | null } | { fehler: Fehler } {
+	if (roh == null) return { vertrag: null };
+	const fehler: Fehler = {};
+	if (typeof roh !== 'object' || Array.isArray(roh)) return { fehler: { vertrag: 'Die Vertragsangaben sind ungültig.' } };
+	const r = roh as Record<string, unknown>;
+	const ende = r.laufzeitEnde ?? null;
+	if (ende !== null && (typeof ende !== 'string' || !gueltigesDatum(ende))) fehler.v_ende = 'Dieses Datum gibt es nicht.';
+
+	let frist: Vertrag['kuendigungsfrist'] = null;
+	if (r.kuendigungsfrist != null) {
+		const f = r.kuendigungsfrist as Record<string, unknown>;
+		if (!Number.isInteger(f.anzahl) || (f.anzahl as number) < 0 || (f.anzahl as number) > 999) {
+			fehler.v_frist = 'Die Kündigungsfrist muss eine ganze Zahl ab 0 sein.';
+		} else if (!FRIST_EINHEITEN.includes(f.einheit as FristEinheit)) {
+			fehler.v_frist = 'Bitte Tage, Wochen oder Monate wählen.';
+		} else frist = { anzahl: f.anzahl as number, einheit: f.einheit as FristEinheit };
+	}
+
+	const verl = r.verlaengerungMonate ?? null;
+	if (verl !== null && (!Number.isInteger(verl) || (verl as number) < 1 || (verl as number) > 120)) {
+		fehler.v_verlaengerung = 'Die Verlängerung muss zwischen 1 und 120 Monaten liegen.';
+	}
+	const texte: Record<'kundennummer' | 'notiz', string | null> = { kundennummer: null, notiz: null };
+	for (const feld of ['kundennummer', 'notiz'] as const) {
+		const wert = r[feld] ?? null;
+		if (wert === null) continue;
+		if (typeof wert !== 'string') fehler[`v_${feld}`] = 'Bitte Text eintragen.';
+		else if (wert.trim().length > VERTRAG_TEXT_MAX) fehler[`v_${feld}`] = `Höchstens ${VERTRAG_TEXT_MAX} Zeichen.`;
+		else texte[feld] = wert.trim() || null;
+	}
+	if (Object.keys(fehler).length) return { fehler };
+	const vertrag: Vertrag = {
+		laufzeitEnde: (ende as string | null) || null,
+		kuendigungsfrist: frist,
+		verlaengerungMonate: verl as number | null,
+		...texte
+	};
+	return { vertrag: istLeer(vertrag) ? null : vertrag };
+}
+
+/** Vertragsangaben aus dem Formular des Posten-Dialogs; Fehler landen in `fehler`. */
+function leseVertrag(f: FormData, fehler: Fehler): Vertrag | null {
+	const zahl = (name: string) => {
+		const t = text(f, name);
+		if (!t) return null;
+		const n = leseGanzzahl(t);
+		return n == null ? NaN : n;
+	};
+	const anzahl = zahl('v_frist');
+	const ergebnis = pruefeVertrag({
+		laufzeitEnde: text(f, 'v_ende') || null,
+		kuendigungsfrist: anzahl == null ? null : { anzahl: Number.isNaN(anzahl) ? -1 : anzahl, einheit: text(f, 'v_einheit') || 'monate' },
+		verlaengerungMonate: (() => {
+			const n = zahl('v_verlaengerung');
+			return n == null ? null : Number.isNaN(n) ? -1 : n;
+		})(),
+		kundennummer: String(f.get('v_kundennummer') ?? ''),
+		notiz: String(f.get('v_notiz') ?? '')
+	});
+	if ('fehler' in ergebnis) {
+		Object.assign(fehler, ergebnis.fehler);
+		return null;
+	}
+	return ergebnis.vertrag;
 }
 
 // ---------- Daueraufträge ----------
