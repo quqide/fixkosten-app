@@ -260,11 +260,15 @@
 				</div>
 				{#if r.art !== 'fest'}
 					<div class:inline-fields={!r.kategorie}>
-						{#if data.ausgabeKategorien.length}
+						{#if data.ausgabeKategorien.length || r.kategorie}
 							<label class="mini"><span>Stand aus</span>
 								<select bind:value={r.kategorie} aria-label="Stand aus">
 									<option value="">von Hand</option>
 									{#each data.ausgabeKategorien as k (k.id)}<option value={k.id}>Actual: {k.name}</option>{/each}
+									<!-- Verknüpfte Kategorie, die (ohne Actual oder nach dem Löschen) nicht in der Liste steht. -->
+									{#if r.kategorie && !data.ausgabeKategorien.some((k) => k.id === r.kategorie)}
+										<option value={r.kategorie}>Actual: nicht gefunden</option>
+									{/if}
 								</select>
 							</label>
 						{/if}

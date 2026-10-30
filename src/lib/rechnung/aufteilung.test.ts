@@ -34,12 +34,19 @@ describe('Aufteilung wie Actual', () => {
 		expect(betraege(verteileWieActual(-10000, teile))).toEqual([-2000, -4000, -4000]);
 	});
 
-	it('gleicht feste Beträge an das Vorzeichen des Gesamtbetrags an', () => {
+	it('übernimmt feste Beträge mit ihrem Vorzeichen, wie Actual', () => {
 		const teile = [
 			{ index: 1, methode: 'fixed-amount', wert: 3000 },
-			{ index: 2, methode: 'remainder', wert: 0 }
+			{ index: 2, methode: 'remainder', wert: 0 },
+			{ index: 3, methode: 'remainder', wert: 0 }
 		];
-		expect(betraege(verteileWieActual(-10000, teile))).toEqual([-3000, -7000]);
+		expect(betraege(verteileWieActual(-10000, teile))).toEqual([3000, -6500, -6500]);
+	});
+
+	it('rundet Prozente wie Actual', () => {
+		// −999,50 € × 7 %: Actual rechnet −99950 × 0,07 → −69,97 €; (−99950 × 7) / 100 ergäbe −69,96 €.
+		const teile = [{ index: 1, methode: 'fixed-percent', wert: 7 }];
+		expect(verteileWieActual(-99950, teile).get(1)).toBe(-6997);
 	});
 
 	it('lässt ohne Rest-Teil offen, was nicht verteilt ist', () => {

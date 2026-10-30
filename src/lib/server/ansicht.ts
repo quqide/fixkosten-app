@@ -53,8 +53,8 @@ interface ActualSalden {
 
 /** Warum der Stand aus Actual fehlt, oder null, wenn er da ist (oder keiner gebraucht wird). */
 function fehlenderStand(r: RueckstellungEintrag, actual: boolean, stand: ActualSalden | null): string | null {
-	if (!r.actualKategorie || stand?.kategorieSalden?.[r.actualKategorie] != null) return null;
-	if (!actual) return 'Actual ist nicht mehr eingerichtet, daher fehlt der Stand aus der Kategorie.';
+	if (r.art === 'fest' || !r.actualKategorie || stand?.kategorieSalden?.[r.actualKategorie] != null) return null;
+	if (!actual) return 'Actual ist nicht eingerichtet, daher fehlt der Stand aus der Kategorie.';
 	if (!stand) return 'Noch kein Abruf aus Actual, daher fehlt der Stand aus der Kategorie.';
 	const name = stand.kategorien?.find((k) => k.id === r.actualKategorie)?.name;
 	return name ? `Kategorie „${name}“ in Actual nicht gefunden.` : 'Kategorie in Actual nicht gefunden.';

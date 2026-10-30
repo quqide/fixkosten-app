@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { oeffneDatenbank, setzeDatenbank } from './db';
 import { personAnsicht, rueckstellungenMitStand } from './ansicht';
+import { heute } from '#lib/rechnung/datum.ts';
+import { load as einstellungenLaden } from '../../routes/einstellungen/+page.server';
 import { aenderePerson, speichereActualStand, speichereRueckstellungen, type RueckstellungEintrag } from './repo';
 
 const stichtag = '2026-10-30';
@@ -54,7 +56,7 @@ describe('Stand der Rückstellungen', () => {
 		speichereActualStand('a', { kategorieSalden: { 'kat-1': 60000 }, kategorien: [] });
 		const [r] = rueckstellungenMitStand('a', stichtag);
 		expect(r).toMatchObject({ standCent: null, standQuelle: null, status: 'unbekannt', rateCent: 0 });
-		expect(r.hinweis).toMatch(/nicht mehr eingerichtet/);
+		expect(r.hinweis).toMatch(/nicht eingerichtet/);
 	});
 
 	it('zeigt in der Übersicht dieselbe Rate und warnt, wenn der Stand fehlt', () => {
@@ -65,6 +67,19 @@ describe('Stand der Rückstellungen', () => {
 		expect(ansicht.aufstellung.warnungen).toContain(
 			'Rücklage „Versicherung“: Kategorie in Actual nicht gefunden. Ohne Stand ist keine Rate eingeplant.'
 		);
+	});
+
+	it('Einstellungen und Übersicht zeigen dieselbe Rate und denselben Status', () => {
+		// Ohne Actual, damit die Seite nichts abruft: eine Rückstellung von Hand, eine mit fehlendem Stand.
+		speichereRueckstellungen('a', [basis, { ...basis, name: 'Urlaub', actualKategorie: null, standCent: 30000 }], 'a');
+		const daten = einstellungenLaden({ locals: { person: 'a' } } as never) as { rueckstellungen: unknown };
+		expect(daten.rueckstellungen).toEqual(personAnsicht('a', heute()).rueckstellungen);
+	});
+
+	it('braucht bei „fest“ keinen Stand, auch wenn noch eine Kategorie gespeichert ist', () => {
+		speichereRueckstellungen('a', [{ ...basis, art: 'fest', betragCent: 5000 }], 'a');
+		const [r] = rueckstellungenMitStand('a', stichtag);
+		expect(r).toMatchObject({ hinweis: null, status: 'aktiv', rateCent: 5000 });
 	});
 
 	it('Bis Ziel: der Monatsbetrag läuft ohne Stand weiter', () => {

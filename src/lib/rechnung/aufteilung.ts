@@ -13,17 +13,17 @@ export interface AufteilungsTeil {
  * Was beim Runden übrig bleibt, bekommt der Rest-Teil mit dem höchsten Index.
  *
  * Gerechnet wird wie in Actual mit Vorzeichen (Ausgaben negativ), weil Math.round bei ,5 nach oben rundet.
- * Feste Beträge bekommen das Vorzeichen des Gesamtbetrags.
+ * Feste Beträge gehen unverändert ein, auch ein positiver Betrag in einer Ausgabe-Regel.
  * Ergebnis: Betrag je Index, mit demselben Vorzeichen wie `betrag`.
  */
 export function verteileWieActual(betrag: number, teile: AufteilungsTeil[]): Map<number, number> {
-	const vorzeichen = betrag < 0 ? -1 : 1;
 	const ergebnis = new Map<number, number>(teile.map((t) => [t.index, 0]));
 	const offen = () => betrag - [...ergebnis.values()].reduce((s, b) => s + b, 0);
 
-	for (const t of teile) if (t.methode === 'fixed-amount') ergebnis.set(t.index, vorzeichen * Math.abs(t.wert));
+	for (const t of teile) if (t.methode === 'fixed-amount') ergebnis.set(t.index, t.wert);
 	const nachFesten = offen();
-	for (const t of teile) if (t.methode === 'fixed-percent') ergebnis.set(t.index, Math.round((nachFesten * t.wert) / 100));
+	// Genau wie Actual klammern, sonst weicht das Runden bei Gleitkomma um einen Cent ab.
+	for (const t of teile) if (t.methode === 'fixed-percent') ergebnis.set(t.index, Math.round(nachFesten * (t.wert / 100)));
 	const rest = teile.filter((t) => t.methode === 'remainder');
 	if (rest.length) {
 		const jeTeil = Math.round(offen() / rest.length);
