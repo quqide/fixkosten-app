@@ -69,7 +69,8 @@
 			vVerl = v?.verlaengerungMonate ? String(v.verlaengerungMonate) : '';
 			vKunde = v?.kundennummer ?? '';
 			vNotiz = v?.notiz ?? '';
-			vertragOffen = !!(vEnde || vFrist || vVerl || vKunde || vNotiz);
+			// Aus v, nicht aus den Feldern: sonst hinge der Effekt an jeder Eingabe und setzte sie zurück.
+			vertragOffen = !!(v?.laufzeitEnde || v?.kuendigungsfrist || v?.verlaengerungMonate || v?.kundennummer || v?.notiz);
 			beteiligungen = (posten.beteiligungen ?? []).map((b) => ({
 				name: b.name,
 				betrag: betragFeld(b.betragCent),
