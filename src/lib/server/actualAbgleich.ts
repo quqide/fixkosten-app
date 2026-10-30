@@ -2,6 +2,7 @@ import { gleicheAb } from '#lib/rechnung/abgleich.ts';
 import { heute } from '#lib/rechnung/datum.ts';
 import {
 	alsPosten,
+	istAusblendbar,
 	pruefeTerminplaene,
 	schlageRolleVor,
 	type Rolle,
@@ -14,6 +15,8 @@ import type { PersonId } from './db.ts';
 import {
 	aktualisierePerson,
 	ladeActualStand,
+	ladeAusblendungen,
+	type Ausblendung,
 	ladePerson,
 	ladePosten,
 	ladePostenZuTerminplan,
@@ -94,8 +97,27 @@ export async function holeAusActual(person: PersonId) {
 	return { geaendert };
 }
 
-/** Warnungen zur Einrichtung in Actual, aus dem letzten Abruf. */
+const schluessel = (terminplan: string, art: string) => `${terminplan}|${art}`;
+
+/** Warnungen zur Einrichtung in Actual, aus dem letzten Abruf, ohne ausgeblendete Hinweise. */
 export function warnungenFuer(person: PersonId): Warnung[] {
+	const aus = new Set(ladeAusblendungen(person).map((h) => schluessel(h.terminplan, h.art)));
+	return alleWarnungen(person).filter((w) => !(istAusblendbar(w) && aus.has(schluessel(w.terminplanId!, w.art))));
+}
+
+/** Die ausgeblendeten Hinweise mit der Meldung, falls sie gerade noch zutrifft. */
+export function ausgeblendeteHinweise(person: PersonId): (Ausblendung & { meldung: Warnung | null; name: string | null })[] {
+	const alle = alleWarnungen(person);
+	const plaene = new Map((ladeActualStand<Schnappschuss>(person)?.daten.terminplaene ?? []).map((t) => [t.id, t.name]));
+	const posten = new Map(ladePosten(person).filter((p) => p.actualTerminplan).map((p) => [p.actualTerminplan!, p.name]));
+	return ladeAusblendungen(person).map((h) => ({
+		...h,
+		meldung: alle.find((w) => w.terminplanId === h.terminplan && w.art === h.art) ?? null,
+		name: plaene.get(h.terminplan) ?? posten.get(h.terminplan) ?? null
+	}));
+}
+
+function alleWarnungen(person: PersonId): Warnung[] {
 	const p = ladePerson(person);
 	const stand = ladeActualStand<Schnappschuss>(person);
 	if (!p.actualKontoId || !stand) return [];

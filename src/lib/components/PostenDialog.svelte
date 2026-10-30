@@ -8,7 +8,7 @@
 	import { heute } from '#lib/rechnung/datum.ts';
 	import Icon from './Icon.svelte';
 	import PostenSymbol from './PostenSymbol.svelte';
-	import type { Warnung } from '#lib/rechnung/terminplan.ts';
+	import { istAusblendbar, type Warnung } from '#lib/rechnung/terminplan.ts';
 	import { POSTEN_ICONS, schlageIconVor, type PostenIcon } from '#lib/postenIcons.ts';
 
 	type Posten = FixkostenPosten & { id?: number; actualTerminplan?: string | null; meldungen?: Warnung[] };
@@ -78,7 +78,11 @@
 							{#each posten.meldungen as m, i (i)}
 								<li><div class="row">
 									<span class="stufe {m.stufe}" aria-label={m.stufe === 'warnung' ? 'Warnung' : 'Hinweis'}>{m.stufe === 'warnung' ? '!' : 'i'}</span>
-									<span class="main"><span class="title">{m.text}</span><span class="detail">{m.tun}</span></span>
+									<span class="main"><span class="title">{m.text}</span><span class="detail">{m.tun}</span>
+										{#if istAusblendbar(m)}
+											<button type="submit" class="textlink ausblenden" form="posten-hinweis" name="hinweis" value="{m.terminplanId}|{m.art}">Nicht mehr anzeigen</button>
+										{/if}
+									</span>
 								</div></li>
 							{/each}
 						</ul>
@@ -198,6 +202,8 @@
 				{/if}
 			</div>
 		</form>
+		<!-- Eigenes Formular, damit Enter im Posten nicht den Hinweis ausblendet. -->
+		<form id="posten-hinweis" method="POST" action="?/ausblenden" use:enhance={absenden} hidden></form>
 	{/if}
 </dialog>
 
@@ -212,6 +218,7 @@
 	.bet { border: 0; margin: 0; padding: 12px 0; display: grid; gap: 8px; border-bottom: 1px solid var(--separator); }
 	.bet input { font-size: 16px; }
 	.textlink { justify-self: start; color: var(--warm); }
+	.textlink.ausblenden { color: var(--tint); }
 	.symbol-wahl summary { display: flex; align-items: center; gap: 12px; cursor: pointer; list-style: none; }
 	.symbol-wahl summary::-webkit-details-marker { display: none; }
 	.symbol-wahl summary .help { margin-left: auto; text-align: right; }

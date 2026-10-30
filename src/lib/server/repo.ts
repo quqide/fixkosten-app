@@ -7,6 +7,7 @@ import { type RueckstellungKonfig, type RueckstellungsArt } from '#lib/rechnung/
 import { db, legeAuftraegeAn, type Besitzer, type PersonId } from './db.ts';
 import { pruefeAuftraege } from './formular.ts';
 import { istPostenIcon } from '#lib/postenIcons.ts';
+import { AUSBLENDBARE_ARTEN, type WarnungArt } from '#lib/rechnung/terminplan.ts';
 
 export type Hell = 'auto' | 'light' | 'dark';
 
@@ -99,7 +100,8 @@ type Rueckgaengig =
 	| { typ: 'rueckstellungen'; person: PersonId; vorher: RueckstellungEintrag[] }
 	| { typ: 'auftraege'; person: PersonId; vorher: AuftragEintrag[] }
 	/** Kontenmodell und die dazu angepassten Daueraufträge, nur gemeinsam rückgängig. */
-	| { typ: 'modus'; vorher: Person; auftraege: AuftragEintrag[] };
+	| { typ: 'modus'; vorher: Person; auftraege: AuftragEintrag[] }
+	| { typ: 'ausblendung'; person: PersonId; hinweis: Ausblendung; warAusgeblendet: boolean };
 
 type Zeile = Record<string, unknown>;
 
@@ -369,6 +371,44 @@ export function speichereZuordnung(person: PersonId, liste: ZuordnungEintrag[], 
 	});
 }
 
+// ---------- Ausgeblendete Hinweise ----------
+
+/** Ein ausgeblendeter Hinweis: Schlüssel ist immer die terminplanId der Meldung und ihre Art. */
+export interface Ausblendung {
+	terminplan: string;
+	art: WarnungArt;
+}
+
+export class NichtAusblendbar extends Error {
+	constructor() {
+		super('Warnungen lassen sich nicht ausblenden, nur Hinweise.');
+	}
+}
+
+export function ladeAusblendungen(person: PersonId): Ausblendung[] {
+	return (
+		db().prepare('SELECT terminplan, art FROM ausgeblendete_hinweise WHERE person = ? ORDER BY terminplan, art').all(person) as Zeile[]
+	).map((z) => ({ terminplan: z.terminplan as string, art: z.art as WarnungArt }));
+}
+
+function schreibeAusblendung(person: PersonId, h: Ausblendung, ausgeblendet: boolean) {
+	if (ausgeblendet) {
+		db().prepare('INSERT OR IGNORE INTO ausgeblendete_hinweise (person, terminplan, art) VALUES (?, ?, ?)').run(person, h.terminplan, h.art);
+	} else {
+		db().prepare('DELETE FROM ausgeblendete_hinweise WHERE person = ? AND terminplan = ? AND art = ?').run(person, h.terminplan, h.art);
+	}
+}
+
+/** Blendet einen Hinweis aus oder wieder ein. Warnungen lehnt die Funktion ab (NichtAusblendbar). */
+export function setzeAusblendung(person: PersonId, h: Ausblendung, ausgeblendet: boolean, wer: PersonId, text: string) {
+	if (ausgeblendet && (!h.terminplan || !AUSBLENDBARE_ARTEN.has(h.art))) throw new NichtAusblendbar();
+	return inTransaktion(() => {
+		const warAusgeblendet = ladeAusblendungen(person).some((x) => x.terminplan === h.terminplan && x.art === h.art);
+		schreibeAusblendung(person, h, ausgeblendet);
+		return protokolliere(wer, `person-${person}`, text, { typ: 'ausblendung', person, hinweis: h, warAusgeblendet });
+	});
+}
+
 // ---------- Rückstellungen ----------
 
 export function ladeRueckstellungen(person: PersonId): RueckstellungEintrag[] {
@@ -628,6 +668,9 @@ export function macheRueckgaengig(id: number, wer: PersonId): string | null {
 			case 'rueckstellungen':
 				schreibeRueckstellungen(r.person, r.vorher);
 				break;
+			case 'ausblendung':
+				schreibeAusblendung(r.person, r.hinweis, r.warAusgeblendet);
+				break;
 		}
 		db().prepare('UPDATE aenderungen SET rueckgaengig = NULL WHERE id = ?').run(id);
 		const text = `Rückgängig: ${z.text as string}`;
@@ -648,6 +691,7 @@ export interface Sicherung {
 	rueckstellungen: RueckstellungEintrag[];
 	gemeinschaft: GemeinschaftEintrag;
 	auftraege?: { a: AuftragKonfig[]; b: AuftragKonfig[] };
+	ausblendungen?: { a: Ausblendung[]; b: Ausblendung[] };
 }
 
 export function exportiere(): Sicherung {
@@ -658,7 +702,8 @@ export function exportiere(): Sicherung {
 		posten: (['a', 'b', 'gemeinsam'] as const).flatMap((b) => ladePosten(b)),
 		rueckstellungen: [...ladeRueckstellungen('a'), ...ladeRueckstellungen('b')],
 		gemeinschaft: ladeGemeinschaft(),
-		auftraege: { a: ladeAuftraege('a'), b: ladeAuftraege('b') }
+		auftraege: { a: ladeAuftraege('a'), b: ladeAuftraege('b') },
+		ausblendungen: { a: ladeAusblendungen('a'), b: ladeAusblendungen('b') }
 	};
 }
 
@@ -705,6 +750,15 @@ export function importiere(s: Sicherung, wer: PersonId) {
 				db().prepare('DELETE FROM dauerauftraege WHERE person = ?').run(id);
 				db().prepare('DELETE FROM merker WHERE schluessel = ?').run(`auftraege-${id}`);
 				legeAuftraegeAn(db(), id);
+			}
+		}
+		// Ältere Sicherungen kennen keine Ausblendungen: dann bleiben die vorhandenen stehen.
+		for (const id of ['a', 'b'] as const) {
+			const liste = s.ausblendungen?.[id];
+			if (!Array.isArray(liste)) continue;
+			db().prepare('DELETE FROM ausgeblendete_hinweise WHERE person = ?').run(id);
+			for (const h of liste) {
+				if (typeof h?.terminplan === 'string' && h.terminplan && AUSBLENDBARE_ARTEN.has(h.art)) schreibeAusblendung(id, h, true);
 			}
 		}
 		db().exec('DELETE FROM aenderungen');

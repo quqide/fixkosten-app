@@ -97,6 +97,12 @@ CREATE TABLE IF NOT EXISTS actual_zuordnung (
 	dauerauftrag TEXT,
 	PRIMARY KEY (person, terminplan)
 );
+CREATE TABLE IF NOT EXISTS ausgeblendete_hinweise (
+	person TEXT NOT NULL CHECK (person IN ('a', 'b')),
+	terminplan TEXT NOT NULL,
+	art TEXT NOT NULL,
+	PRIMARY KEY (person, terminplan, art)
+);
 INSERT OR IGNORE INTO personen (id, name, ueberweisungstag) VALUES ('a', 'Person 1', 7), ('b', 'Person 2', 7);
 INSERT OR IGNORE INTO gemeinschaft (id) VALUES (1);
 `;

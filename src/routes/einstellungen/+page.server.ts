@@ -4,9 +4,10 @@ import { eindeutigeNamen, STANDARD_REST_RUNDUNG, type AuftragKonfig } from '#lib
 import { leseAuftraege } from '#lib/server/formular.ts';
 import { heute } from '#lib/rechnung/datum.ts';
 import { rueckstellungenMitStand } from '#lib/server/ansicht.ts';
-import { angemeldet } from '#lib/server/aktionen.ts';
+import { angemeldet, hinweisAktionen } from '#lib/server/aktionen.ts';
 import { ActualFehler, actualEingerichtet, ladeKonten, type ActualKonto } from '#lib/server/actual.ts';
 import {
+	ausgeblendeteHinweise,
 	holeAusActual,
 	uebernehmeTerminplaene,
 	warnungenFuer,
@@ -55,6 +56,7 @@ export const load: PageServerLoad = ({ locals }) => {
 		actualKonten: actual ? kontenOderFehler(id) : null,
 		zuordnung: actual ? zuordnungAnsicht(id) : null,
 		warnungen: actual ? warnungenFuer(id) : [],
+		ausgeblendet: ausgeblendeteHinweise(id),
 		person: ladePerson(id),
 		auftraege: ladeAuftraege(id),
 		rueckstellungen: rueckstellungenMitStand(id, heute()),
@@ -66,6 +68,8 @@ export const load: PageServerLoad = ({ locals }) => {
 };
 
 export const actions: Actions = {
+	...hinweisAktionen,
+
 	modus: async ({ request, locals }) => {
 		const wer = angemeldet(locals);
 		const modus = Number((await request.formData()).get('modus'));
