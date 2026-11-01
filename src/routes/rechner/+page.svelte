@@ -9,7 +9,8 @@
 	const leer = (): NeueZeile => ({ name: '', betrag: '', intervall: '', wer: 'persoenlich' });
 	// Eingetippte Zeilen plus eine freie; „Weitere Zeile“ hängt bis zum Absenden noch welche an.
 	let zeilen = $derived([...data.felder.zeilen, leer()]);
-	const fehlerListe = $derived(Object.values(data.fehler));
+	// Nach Feld, nicht nach Text: zwei Zeilen können dieselbe Meldung haben.
+	const fehlerListe = $derived(Object.entries(data.fehler));
 
 	const differenz = (cent: number) => (cent === 0 ? eur(0) : `${cent > 0 ? '+' : '−'}${eur(Math.abs(cent))}`);
 	const wert = (cent: number | null) => (cent == null ? '–' : eur(cent));
@@ -24,7 +25,7 @@
 {#if fehlerListe.length}
 	<div class="card fehler" role="alert">
 		<p>Nicht alles konnte übernommen werden. Für diese Felder rechnet der Rechner mit dem heutigen Wert:</p>
-		<ul>{#each fehlerListe as f (f)}<li>{f}</li>{/each}</ul>
+		<ul>{#each fehlerListe as [feld, f] (feld)}<li>{f}</li>{/each}</ul>
 	</div>
 {/if}
 
@@ -113,7 +114,7 @@
 	{#each data.vergleich as g (g.titel)}
 		<div class="card vergleich">
 			<div class="kopf"><span class="titel">{g.titel}</span><span>Heute</span><span>Mit Änderung</span><span>Differenz</span></div>
-			{#each g.zeilen as z (z.name)}
+			{#each g.zeilen as z, i (i)}
 				<div class="zeile">
 					<span class="name">{z.name}</span>
 					<span class="zahl" data-label="Heute">{wert(z.heuteCent)}</span>
@@ -128,11 +129,11 @@
 		<div class="card warnungen">
 			<div>
 				<h3>Warnungen heute</h3>
-				{#if data.warnungen.heute.length}<ul>{#each data.warnungen.heute as w (w)}<li>{w}</li>{/each}</ul>{:else}<p>Keine.</p>{/if}
+				{#if data.warnungen.heute.length}<ul>{#each data.warnungen.heute as w, i (i)}<li>{w}</li>{/each}</ul>{:else}<p>Keine.</p>{/if}
 			</div>
 			<div>
 				<h3>Warnungen mit Änderung</h3>
-				{#if data.warnungen.mit.length}<ul>{#each data.warnungen.mit as w (w)}<li>{w}</li>{/each}</ul>{:else}<p>Keine.</p>{/if}
+				{#if data.warnungen.mit.length}<ul>{#each data.warnungen.mit as w, i (i)}<li>{w}</li>{/each}</ul>{:else}<p>Keine.</p>{/if}
 			</div>
 		</div>
 	{/if}

@@ -15,12 +15,12 @@ export default defineConfig({
 	],
 	test: {
 		projects: [
-			{ extends: true, test: { name: 'server', include: ['src/**/*.test.ts'], exclude: ['src/lib/components/**'] } },
+			{ extends: true, test: { name: 'server', include: ['src/**/*.test.ts'], exclude: ['src/lib/components/**', 'src/routes/**'] } },
 			{
-				// Komponenten laufen mit der Browser-Version von Svelte in jsdom.
+				// Komponenten und Seiten laufen mit der Browser-Version von Svelte in jsdom.
 				extends: true,
 				resolve: { conditions: ['browser'] },
-				test: { name: 'komponenten', include: ['src/lib/components/**/*.test.ts'], environment: 'jsdom' }
+				test: { name: 'komponenten', include: ['src/lib/components/**/*.test.ts', 'src/routes/**/*.test.ts'], environment: 'jsdom' }
 			}
 		]
 	}
