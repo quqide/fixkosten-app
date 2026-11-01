@@ -15,6 +15,7 @@
 		{ pfad: '/', name: 'Übersicht', icon: 'uebersicht' },
 		{ pfad: '/fixkosten', name: 'Fixkosten', icon: 'fixkosten' },
 		{ pfad: '/gemeinsam', name: 'Gemeinsam', icon: 'gemeinsam' },
+		{ pfad: '/rechner', name: 'Rechner', icon: 'rechner' },
 		{ pfad: '/einstellungen', name: 'Einstellungen', icon: 'einstellungen' }
 	];
 
