@@ -9,6 +9,7 @@
 	import { heute } from '#lib/rechnung/datum.ts';
 	import Icon from './Icon.svelte';
 	import PostenSymbol from './PostenSymbol.svelte';
+	import Sheet from './Sheet.svelte';
 	import { hinweisSchluessel, istAusblendbar, type Warnung } from '#lib/rechnung/terminplan.ts';
 	import { POSTEN_ICONS, schlageIconVor, type PostenIcon } from '#lib/postenIcons.ts';
 
@@ -16,7 +17,6 @@
 
 	let { posten = $bindable(), neuTitel = 'Neue Fixkosten' }: { posten: Posten | null | undefined; neuTitel?: string } = $props();
 
-	let dialog: HTMLDialogElement;
 	let fehler = $state<Record<string, string>>({});
 	let beteiligungen = $state<{ name: string; betrag: string; tag: string }[]>([]);
 	let name = $state('');
@@ -76,9 +76,6 @@
 				betrag: betragFeld(b.betragCent),
 				tag: b.eingangstag ? String(b.eingangstag) : ''
 			}));
-			if (!dialog.open) dialog.showModal();
-		} else if (dialog?.open) {
-			dialog.close();
 		}
 	});
 
@@ -103,13 +100,9 @@
 	};
 </script>
 
-<dialog bind:this={dialog} onclose={schliessen} aria-labelledby="posten-titel">
+<Sheet offen={posten != null} titel={posten ? (neu ? neuTitel : posten.name) : ''} formular="posten-formular" onabbrechen={schliessen}>
 	{#if posten}
-		<form method="POST" action="?/speichern" use:enhance={absenden} novalidate>
-			<div class="sheet-head">
-				<h2 id="posten-titel">{neu ? neuTitel : posten.name}</h2>
-				<button type="button" class="close" onclick={schliessen} aria-label="Schließen"><Icon name="schliessen" size={16} /></button>
-			</div>
+		<form id="posten-formular" method="POST" action="?/speichern" use:enhance={absenden} novalidate>
 			<div class="sheet-body">
 				{#if posten.id != null}<input type="hidden" name="id" value={posten.id} />{/if}
 				{#if posten.meldungen?.length}
@@ -279,10 +272,6 @@
 					</details>
 				</div>
 
-				<div class="sheet-actions">
-					<button type="button" class="secondary" onclick={schliessen}>Abbrechen</button>
-					<button type="submit" class="primary">{neu ? 'Hinzufügen' : 'Änderungen sichern'}</button>
-				</div>
 				{#if !neu}
 					<button type="submit" class="danger" formaction="?/loeschen">„{posten.name}“ löschen</button>
 				{/if}
@@ -291,7 +280,7 @@
 		<!-- Eigenes Formular, damit Enter im Posten nicht den Hinweis ausblendet. -->
 		<form id="posten-hinweis" method="POST" action="?/ausblenden" use:enhance={absenden} hidden></form>
 	{/if}
-</dialog>
+</Sheet>
 
 <style>
 	.aus-actual { margin: 0 4px 12px; }
