@@ -24,6 +24,12 @@ export function datumLang(iso: string) {
 	return `${d.t}. ${MONATE[d.m - 1]} ${d.j}`;
 }
 
+/** 30.09.2026 */
+export function datumZahl(iso: string) {
+	const d = parseDatum(iso);
+	return `${String(d.t).padStart(2, '0')}.${String(d.m).padStart(2, '0')}.${d.j}`;
+}
+
 export function datumKurz(iso: string) {
 	const d = parseDatum(iso);
 	return `${d.t}. ${MONATE[d.m - 1]}`;

@@ -1,7 +1,9 @@
 <script lang="ts">
 	import type { FixkostenPosten, Zeile } from '#lib/rechnung/fixkosten.ts';
 	import type { Warnung } from '#lib/rechnung/terminplan.ts';
-	import { datumKnapp, eur, intervallText } from '#lib/format.ts';
+	import { datumKnapp, datumZahl, eur, intervallText } from '#lib/format.ts';
+	import { heute } from '#lib/rechnung/datum.ts';
+	import { letzterKuendigungstag } from '#lib/rechnung/vertrag.ts';
 	import PostenSymbol from './PostenSymbol.svelte';
 	import Icon from './Icon.svelte';
 
@@ -13,11 +15,19 @@
 
 	let {
 		eintraege,
-		bearbeiten
+		bearbeiten,
+		stichtag = heute()
 	}: {
 		eintraege: Eintrag<FixkostenPosten & { id?: number; actualTerminplan?: string | null; meldungen?: Warnung[] }>[];
 		bearbeiten: (p: FixkostenPosten & { id?: number; actualTerminplan?: string | null; meldungen?: Warnung[] }) => void;
+		stichtag?: string;
 	} = $props();
+
+	function vertragText(p: FixkostenPosten) {
+		const k = letzterKuendigungstag(p.vertrag, stichtag);
+		if (!k) return null;
+		return k.status === 'abgelaufen' ? `Laufzeit am ${datumZahl(k.laufzeitEnde)} abgelaufen` : `kündbar bis ${datumZahl(k.letzterKuendigungstag)}`;
+	}
 
 	const summe = $derived(
 		eintraege.reduce((s, e) => s + e.zeile.monatlichCent + e.beteiligungen.reduce((t, b) => t + b.monatlichCent, 0), 0)
@@ -40,7 +50,7 @@
 				<span class="main">
 					<span class="title">{e.posten.name}</span>
 					<span class="detail">
-						{eur(e.posten.betragCent)} {intervallText(e.posten.intervallMonate)}{#if e.zeile.naechsteBuchung}{' · '}{datumKnapp(e.zeile.naechsteBuchung)}{/if}{#if e.posten.actualTerminplan}{' · '}<span class="quelle">Actual</span>{#if e.posten.meldungen?.length}{@const m = meldungenAnzeige(e.posten.meldungen)}{' '}<span
+						{eur(e.posten.betragCent)} {intervallText(e.posten.intervallMonate)}{#if e.zeile.naechsteBuchung}{' · '}{datumKnapp(e.zeile.naechsteBuchung)}{/if}{#if vertragText(e.posten)}{' · '}{vertragText(e.posten)}{/if}{#if e.posten.actualTerminplan}{' · '}<span class="quelle">Actual</span>{#if e.posten.meldungen?.length}{@const m = meldungenAnzeige(e.posten.meldungen)}{' '}<span
 									class="meldung"
 									class:warnung={m.warnung}
 									role="img"

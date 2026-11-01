@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Terminplan } from '#lib/rechnung/terminplan.ts';
 import type { Vertrag } from '#lib/rechnung/vertrag.ts';
+import { load } from '../../routes/+page.server';
 import { uebernehmeTerminplaene } from './actualAbgleich';
 import { oeffneDatenbank, setzeDatenbank } from './db';
 import { lesePosten } from './formular';
@@ -99,5 +100,25 @@ describe('Vertragsangaben speichern', () => {
 		expect(() => importiere(kaputt, 'a')).toThrow('ungültige Vertragsangaben');
 		// Die vorherigen Daten bleiben unverändert.
 		expect(ladeEinzelposten(id)?.vertrag).toEqual(vertrag);
+	});
+});
+
+describe('Übersicht: Bald kündbar', () => {
+	const uebersicht = (stichtag: string, person: 'a' | 'b' = 'a') =>
+		load({ locals: { person }, url: new URL(`http://x/?stichtag=${stichtag}`) } as never) as unknown as {
+			baldKuendbar: { name: string; gemeinsam: boolean; letzterKuendigungstag: string; tage: number; kundennummer: string | null }[];
+		};
+
+	it('folgt dem Stichtag und zeigt eigene und gemeinsame Posten, nicht die der anderen Person', () => {
+		speicherePosten({ ...strom, vertrag }, 'a');
+		speicherePosten({ ...strom, besitzer: 'gemeinsam', name: 'Internet', vertrag: { ...vertrag, laufzeitEnde: '2026-11-30', kundennummer: null } }, 'a');
+		speicherePosten({ ...strom, besitzer: 'b', name: 'Handy B', vertrag }, 'b');
+
+		// Kündigungstage: Internet 31.08.2026, Strom 30.09.2026.
+		expect(uebersicht('2026-09-05').baldKuendbar).toEqual([
+			expect.objectContaining({ name: 'Strom', gemeinsam: false, letzterKuendigungstag: '2026-09-30', tage: 25, kundennummer: 'K-4711' })
+		]);
+		expect(uebersicht('2026-08-10').baldKuendbar.map((k) => k.name)).toEqual(['Internet', 'Strom']);
+		expect(uebersicht('2026-05-01').baldKuendbar).toEqual([]);
 	});
 });

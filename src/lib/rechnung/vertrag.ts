@@ -69,3 +69,42 @@ export function letzterKuendigungstag(v: Vertrag | null | undefined, stichtag: I
 	}
 	return { laufzeitEnde: formatDatum(ende), letzterKuendigungstag: formatDatum(minusFrist(ende, v.kuendigungsfrist)), status };
 }
+
+/** Wie viele Tage im Voraus die Übersicht an einen letzten Kündigungstag erinnert. */
+export const KUENDIGUNG_FENSTER_TAGE = 60;
+
+const tageZwischen = (von: Tag, bis: Tag) =>
+	Math.round((Date.UTC(bis.j, bis.m - 1, bis.t) - Date.UTC(von.j, von.m - 1, von.t)) / 864e5);
+
+/** Das Datum, um das es geht: letzter Kündigungstag, bei abgelaufenen Verträgen das Laufzeitende. */
+const datumVon = (k: Kuendigung) => (k.status === 'abgelaufen' ? k.laufzeitEnde : k.letzterKuendigungstag);
+
+export interface BaldKuendbar<P> {
+	posten: P;
+	kuendigung: Kuendigung;
+	/** Tage vom Stichtag bis zum letzten Kündigungstag (bei „abgelaufen“ bis zum Laufzeitende, dann ≤ 0). */
+	tage: number;
+}
+
+/**
+ * Posten, deren letzter Kündigungstag in den nächsten `fenster` Tagen liegt (Stichtag eingeschlossen),
+ * dazu abgelaufene Verträge ohne Verlängerung. Sortiert nach Datum, früheste zuerst.
+ */
+export function baldKuendbar<P extends { name: string; vertrag?: Vertrag | null }>(
+	posten: P[],
+	stichtag: IsoDatum,
+	fenster = KUENDIGUNG_FENSTER_TAGE
+): BaldKuendbar<P>[] {
+	const heute = parseDatum(stichtag);
+	const treffer: BaldKuendbar<P>[] = [];
+	for (const p of posten) {
+		const k = letzterKuendigungstag(p.vertrag, stichtag);
+		if (!k) continue;
+		const tage = tageZwischen(heute, parseDatum(datumVon(k)));
+		if (k.status === 'laeuft' && (tage < 0 || tage > fenster)) continue;
+		treffer.push({ posten: p, kuendigung: k, tage });
+	}
+	return treffer.sort(
+		(a, b) => datumVon(a.kuendigung).localeCompare(datumVon(b.kuendigung)) || a.posten.name.localeCompare(b.posten.name, 'de')
+	);
+}

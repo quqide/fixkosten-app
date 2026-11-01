@@ -5,7 +5,8 @@ import { angemeldet } from '#lib/server/aktionen.ts';
 import { personAnsicht } from '#lib/server/ansicht.ts';
 import { ActualFehler } from '#lib/server/actual.ts';
 import { holeAusActual, warnungenFuer } from '#lib/server/actualAbgleich.ts';
-import { aenderePerson, ladePerson, letzteAenderung } from '#lib/server/repo.ts';
+import { aenderePerson, ladePerson, ladePosten, letzteAenderung } from '#lib/server/repo.ts';
+import { baldKuendbar } from '#lib/rechnung/vertrag.ts';
 import type { Actions, PageServerLoad } from './$types';
 
 function stichtagAus(url: URL) {
@@ -29,7 +30,17 @@ export const load: PageServerLoad = ({ locals, url }) => {
 		zeitreise,
 		...personAnsicht(id, stichtag),
 		warnungen: warnungenFuer(id).filter((w) => w.stufe === 'warnung').length,
-		letzte: letzteAenderung(`fixkosten-${id}`)
+		letzte: letzteAenderung(`fixkosten-${id}`),
+		baldKuendbar: baldKuendbar([...ladePosten(id), ...ladePosten('gemeinsam')], stichtag).map((b) => ({
+			id: b.posten.id,
+			name: b.posten.name,
+			icon: b.posten.icon ?? null,
+			art: b.posten.art ?? null,
+			gemeinsam: b.posten.besitzer === 'gemeinsam',
+			kundennummer: b.posten.vertrag?.kundennummer ?? null,
+			...b.kuendigung,
+			tage: b.tage
+		}))
 	};
 };
 
