@@ -637,11 +637,13 @@ function zuAenderung(z: Zeile): Aenderung {
 
 /** Ein beschädigter Eintrag darf nicht den ganzen Verlauf blockieren; er ist dann nur nicht rückgängig zu machen. */
 function anwendbar(json: string, text: string): boolean {
+	let r: unknown;
 	try {
-		return nochAnwendbar(JSON.parse(json) as Rueckgaengig, text);
+		r = JSON.parse(json);
 	} catch {
 		return false;
 	}
+	return typeof r === 'object' && r !== null && nochAnwendbar(r as Rueckgaengig, text);
 }
 
 /**

@@ -230,7 +230,6 @@ describe('Datenhaltung', () => {
 		const s = JSON.parse(JSON.stringify(exportiere()));
 		s.auftraege.a = [null];
 		expect(() => importiere(s, 'a')).toThrow('ungültige Daueraufträge');
-		expect(() => importiere(s, 'a')).not.toThrow(/Cannot read/);
 	});
 
 	it('zeigt den Verlauf auch mit einem beschädigten Eintrag', () => {
