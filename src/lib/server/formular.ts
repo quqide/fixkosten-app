@@ -197,50 +197,68 @@ function pruefeRundung(r: unknown): Rundung | null | undefined {
 	return { schritt: schritt as number, richtung: richtung as Rundung['richtung'] };
 }
 
+/** Welches Feld eines Dauerauftrags ein Fehler betrifft, damit das Bearbeitungsfenster ihn dort zeigt. */
+export type AuftragFeld = 'name' | 'ziel' | 'teile' | 'rundung';
+
 /**
  * Prüft Daueraufträge in der gespeicherten Form, aus dem Formular wie aus einer Sicherung.
- * Fehler je Auftrag unter `a_<index>`, übergreifende unter `allgemein`. `wkns`: WKNs der Rückstellungen.
+ * Fehler je Auftrag unter `a_<index>` (das betroffene Feld unter `feld_<index>`), übergreifende
+ * zusätzlich unter `allgemein`. `wkns`: WKNs der Rückstellungen.
  */
 export function pruefeAuftraege(roh: unknown, wkns: readonly string[] = []): { auftraege: AuftragKonfig[] } | { fehler: Record<string, string> } {
 	if (!Array.isArray(roh)) return { fehler: { allgemein: 'Die Daueraufträge ließen sich nicht lesen.' } };
 	const fehler: Record<string, string> = {};
 	const auftraege: AuftragKonfig[] = [];
+	/** Index im Formular zu jedem gültigen Auftrag, für Fehler am richtigen Eintrag. */
+	const index: number[] = [];
+	const melde = (i: number, feld: AuftragFeld, text: string) => {
+		fehler[`a_${i}`] ??= text;
+		fehler[`feld_${i}`] ??= feld;
+	};
 	roh.forEach((a: Roh, i) => {
 		const name = typeof a?.name === 'string' ? a.name.trim() : '';
-		if (!name) return void (fehler[`a_${i}`] = 'Bitte einen Namen eintragen, zum Beispiel „ETF Invest“.');
-		if (name.length > MAX_NAME) return void (fehler[`a_${i}`] = `Der Name darf höchstens ${MAX_NAME} Zeichen haben.`);
+		if (!name) return melde(i, 'name', 'Bitte einen Namen eintragen, zum Beispiel „ETF Invest“.');
+		if (name.length > MAX_NAME) return melde(i, 'name', `Der Name darf höchstens ${MAX_NAME} Zeichen haben.`);
 		if (!Array.isArray(a.bausteine) || !a.bausteine.length) {
-			return void (fehler[`a_${i}`] = `„${name}“: Woraus setzt sich der Betrag zusammen?`);
+			return melde(i, 'teile', `„${name}“: Woraus setzt sich der Betrag zusammen?`);
 		}
 		const bausteine: Baustein[] = [];
 		for (const roherBaustein of a.bausteine as Roh[]) {
 			const b = pruefeBaustein(roherBaustein, wkns);
-			if (!b) return void (fehler[`a_${i}`] = `„${name}“: Ein Baustein ist ungültig oder unvollständig.`);
+			if (!b) return melde(i, 'teile', `„${name}“: Ein Teil ist ungültig oder unvollständig.`);
 			bausteine.push(b);
 		}
 		if (bausteine.some((b) => b.typ === 'rest') && bausteine.length > 1) {
-			return void (fehler[`a_${i}`] = `„${name}“: „Was übrig bleibt“ lässt sich nicht mit anderem kombinieren.`);
+			return melde(i, 'teile', `„${name}“: „Was übrig bleibt“ lässt sich nicht mit anderem kombinieren.`);
 		}
 		const rundung = pruefeRundung(a.rundung);
-		if (rundung === undefined) return void (fehler[`a_${i}`] = `„${name}“: Die Rundung ist ungültig.`);
+		if (rundung === undefined) return melde(i, 'rundung', `„${name}“: Die Rundung ist ungültig.`);
 		if (a.zielkonto != null && (typeof a.zielkonto !== 'string' || a.zielkonto.length > MAX_NAME)) {
-			return void (fehler[`a_${i}`] = `„${name}“: Das Zielkonto ist ungültig.`);
+			return melde(i, 'ziel', `„${name}“: Das Zielkonto ist ungültig.`);
 		}
 		auftraege.push({ name, zielkonto: ((a.zielkonto as string | undefined) ?? '').trim(), bausteine, rundung });
+		index.push(i);
 	});
 	const allgemein: string[] = [];
 	const gesehen = new Set<string>();
-	for (const a of auftraege) {
+	for (const [j, a] of auftraege.entries()) {
 		const schluessel = a.name.toLocaleLowerCase('de-DE');
 		// Terminpläne in Actual werden über den Namen zugeordnet, darum muss er eindeutig sein.
 		if (gesehen.has(schluessel)) {
-			allgemein.push(`Der Name „${a.name}“ kommt doppelt vor. Jeder Dauerauftrag braucht einen eigenen Namen.`);
+			const text = `Der Name „${a.name}“ kommt doppelt vor. Jeder Dauerauftrag braucht einen eigenen Namen.`;
+			allgemein.push(text);
+			// Beim zweiten Vorkommen und beim ersten, damit es zeigt, wer gerade bearbeitet wird.
+			melde(index[j], 'name', text);
+			melde(index[auftraege.findIndex((x) => x.name.toLocaleLowerCase('de-DE') === schluessel)], 'name', text);
 			break;
 		}
 		gesehen.add(schluessel);
 	}
-	if (auftraege.filter((a) => a.bausteine.some((b) => b.typ === 'rest')).length > 1) {
-		allgemein.push('Nur ein Dauerauftrag kann bekommen, was übrig bleibt.');
+	const mitRest = auftraege.flatMap((a, j) => (a.bausteine.some((b) => b.typ === 'rest') ? [index[j]] : []));
+	if (mitRest.length > 1) {
+		const text = 'Nur ein Dauerauftrag kann bekommen, was übrig bleibt.';
+		allgemein.push(text);
+		for (const i of mitRest) melde(i, 'teile', text);
 	}
 	if (allgemein.length) fehler.allgemein = allgemein.join(' ');
 	return Object.keys(fehler).length ? { fehler } : { auftraege };
@@ -250,6 +268,10 @@ export function pruefeAuftraege(roh: unknown, wkns: readonly string[] = []): { a
 export function leseAuftraege(roh: unknown, wkns: readonly string[] = []): { auftraege: AuftragKonfig[] } | { fehler: Record<string, string> } {
 	if (!Array.isArray(roh)) return { fehler: { allgemein: 'Die Eingaben ließen sich nicht lesen.' } };
 	const fehler: Record<string, string> = {};
+	const teilFehler = (i: number, text: string) => {
+		fehler[`a_${i}`] = text;
+		fehler[`feld_${i}`] = 'teile';
+	};
 	const umgewandelt = roh.map((a: Roh, i) => {
 		const name = String(a?.name ?? '').trim();
 		const bausteine = (Array.isArray(a?.bausteine) ? a.bausteine : []).map((b: Roh) => {
@@ -257,12 +279,12 @@ export function leseAuftraege(roh: unknown, wkns: readonly string[] = []): { auf
 			switch (b?.typ) {
 				case 'fest': {
 					const cent = leseBetrag(wert);
-					if (cent == null || cent < 0) fehler[`a_${i}`] = `„${name}“: Bitte einen Betrag eintragen.`;
+					if (cent == null || cent < 0) teilFehler(i, `„${name}“: Bitte einen Betrag eintragen.`);
 					return { typ: 'fest', betragCent: cent };
 				}
 				case 'prozent': {
 					const p = Number(wert.replace(',', '.'));
-					if (!wert.trim() || !Number.isFinite(p) || p < 0 || p > 100) fehler[`a_${i}`] = `„${name}“: Prozent zwischen 0 und 100 eintragen.`;
+					if (!wert.trim() || !Number.isFinite(p) || p < 0 || p > 100) teilFehler(i, `„${name}“: Prozent zwischen 0 und 100 eintragen.`);
 					return { typ: 'prozent', prozent: p };
 				}
 				case 'ruecklagen':

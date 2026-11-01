@@ -7,7 +7,21 @@ describe('Daueraufträge prüfen', () => {
 			{ name: 'Sparen', zielkonto: 'Tagesgeld', bausteine: [{ typ: 'fest', wert: '50' }] },
 			{ name: 'sparen ', zielkonto: 'Depot', bausteine: [{ typ: 'fest', wert: '20' }] }
 		]);
-		expect(e).toEqual({ fehler: { allgemein: expect.stringContaining('doppelt') } });
+		const doppelt = expect.stringContaining('doppelt');
+		// Auch an beiden Einträgen beim Namen, damit das Bearbeitungsfenster den Fehler am Feld zeigt.
+		expect(e).toEqual({ fehler: { allgemein: doppelt, a_0: doppelt, a_1: doppelt, feld_0: 'name', feld_1: 'name' } });
+	});
+
+	it('nennt das betroffene Feld: zweimal Rest an den Teilen, fehlender Betrag an den Teilen, fehlender Name am Namen', () => {
+		const zweiRest = pruefeAuftraege([
+			{ name: 'Spaß', bausteine: [{ typ: 'rest' }] },
+			{ name: 'ETF', bausteine: [{ typ: 'prozent', prozent: 20 }] },
+			{ name: 'Urlaub', bausteine: [{ typ: 'rest' }] }
+		]) as { fehler: Record<string, string> };
+		expect(zweiRest.fehler).toMatchObject({ feld_0: 'teile', feld_2: 'teile', a_2: expect.stringContaining('Nur ein Dauerauftrag') });
+		expect(zweiRest.fehler.a_1).toBeUndefined();
+		expect(leseAuftraege([{ name: 'ETF', bausteine: [{ typ: 'prozent', wert: '' }] }])).toMatchObject({ fehler: { feld_0: 'teile' } });
+		expect(leseAuftraege([{ name: '', bausteine: [{ typ: 'rest' }] }])).toMatchObject({ fehler: { feld_0: 'name' } });
 	});
 
 	it('liest das Formular in die gespeicherte Form', () => {
