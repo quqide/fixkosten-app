@@ -4,10 +4,11 @@
 	import PostenSymbol from '#lib/components/PostenSymbol.svelte';
 	import Ring from '#lib/components/Ring.svelte';
 	import Verlauf from '#lib/components/Verlauf.svelte';
-	import { betragFeld, datumKurz, datumLang, eur, eurGanz, inTagen, zeitpunkt } from '#lib/format.ts';
+	import { betragFeld, datumKurz, datumLang, datumZahl, eur, eurGanz, inTagen, zeitpunkt } from '#lib/format.ts';
 	import type { SubmitFunction } from '$app/forms';
 	import { mitRueckmeldung, zeigeToast } from '#lib/toast.svelte.ts';
 	import { beschreibeAuftrag } from '#lib/rechnung/aufstellung.ts';
+	import { KUENDIGUNG_FENSTER_TAGE } from '#lib/rechnung/vertrag.ts';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
@@ -69,6 +70,7 @@
 	const spitze = $derived(data.verlauf.length ? data.verlauf.reduce((a, b) => (b.sollCent > a.sollCent ? b : a)) : null);
 	const summeDauerauftraege = $derived(data.aufstellung.dauerauftraege.reduce((s, d) => s + d.betragCent, 0));
 	const artKlasse = (art: string | null) => `a${art?.slice(0, 2) ?? '50'}`;
+	const noch = (tage: number) => (tage === 0 ? 'nur noch heute' : tage === 1 ? 'noch 1 Tag' : `noch ${tage} Tage`);
 	const detailZu = (i: number) => {
 		const a = data.auftraege[i];
 		return a ? `${a.zielkonto ? `aufs ${a.zielkonto}: ` : ''}${beschreibeAuftrag(a)}` : '';
@@ -236,6 +238,30 @@
 	{/if}
 {/if}
 
+{#if data.baldKuendbar.length}
+	<div class="section">
+		<div class="section-head"><h2>Bald kündbar</h2><span class="aside">nächste {KUENDIGUNG_FENSTER_TAGE} Tage</span></div>
+		<div class="card"><ul class="rows">
+			{#each data.baldKuendbar as k (k.id)}
+				<li><div class="row">
+					<PostenSymbol name={k.name} icon={k.icon} klasse={artKlasse(k.art)} />
+					<span class="main">
+						<span class="title">{k.name}{#if k.gemeinsam}<span class="gemeinsam"> · gemeinsam</span>{/if}</span>
+						<span class="detail">
+							{#if k.status === 'abgelaufen'}
+								Laufzeit am {datumZahl(k.laufzeitEnde)} abgelaufen
+							{:else}
+								kündbar bis {datumZahl(k.letzterKuendigungstag)} ({noch(k.tage)})
+							{/if}
+							{#if k.kundennummer}{' · '}Kundennummer {k.kundennummer}{/if}
+						</span>
+					</span>
+				</div></li>
+			{/each}
+		</ul></div>
+	</div>
+{/if}
+
 <form class="zeitreise" method="GET">
 	<label for="stichtag">Anderes Datum ansehen</label>
 	<input id="stichtag" name="stichtag" type="date" value={data.stichtag} />
@@ -257,6 +283,7 @@
 	.badge.passt { color: var(--tint); background: var(--tint-soft); }
 	.badge.ueberdeckt { color: var(--calm); background: var(--calm-soft); }
 	.badge.unterdeckt { color: var(--warm); background: var(--warm-soft); }
+	.gemeinsam { font-weight: 400; color: var(--secondary); }
 	.kontostand { border-top: 1px solid var(--separator); }
 	.actual { border-top: 1px solid var(--separator); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; padding: 14px 22px; }
 	.actual-text { display: grid; gap: 2px; font-size: 14px; color: var(--secondary); flex: 1 1 260px; }

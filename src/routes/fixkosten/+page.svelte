@@ -49,7 +49,7 @@
 	</nav>
 	<div class="card" style="margin-top:14px">
 		{#if sichtbar.length}
-			<PostenListe eintraege={sichtbar} bearbeiten={(p) => (bearbeitet = p)} />
+			<PostenListe eintraege={sichtbar} stichtag={data.stichtag} bearbeiten={(p) => (bearbeitet = p)} />
 		{:else}
 			<p class="empty">In dieser Kategorie gibt es noch nichts.</p>
 		{/if}

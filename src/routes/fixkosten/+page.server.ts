@@ -9,10 +9,12 @@ import type { Actions, PageServerLoad } from './$types';
 export const load: PageServerLoad = ({ locals }) => {
 	const id = angemeldet(locals);
 	const person = ladePerson(id);
+	const stichtag = heute();
 	return {
 		person,
+		stichtag,
 		// Dieselben Meldungen wie unter Einstellungen, am Posten mit dem Terminplan.
-		eintraege: postenMitZeilen(mitMeldungen(ladePosten(id), warnungenFuer(id)), heute(), person.ueberweisungstag),
+		eintraege: postenMitZeilen(mitMeldungen(ladePosten(id), warnungenFuer(id)), stichtag, person.ueberweisungstag),
 		letzte: letzteAenderung(`fixkosten-${id}`)
 	};
 };

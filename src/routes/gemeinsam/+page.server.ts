@@ -21,6 +21,7 @@ export const load: PageServerLoad = ({ locals }) => {
 	const ansicht = gemeinschaftAnsicht(stichtag);
 	return {
 		...ansicht,
+		stichtag,
 		personen: ladePersonen().map((p) => ({ id: p.id, name: p.name })),
 		eintraege: postenMitZeilen(ansicht.posten, stichtag, 1),
 		letzte: letzteAenderung('gemeinsam'),

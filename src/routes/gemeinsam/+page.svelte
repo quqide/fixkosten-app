@@ -193,7 +193,7 @@
 	<div class="section-head"><h2>Gemeinsame Fixkosten</h2></div>
 	<div class="card">
 		{#if data.eintraege.length}
-			<PostenListe eintraege={data.eintraege} bearbeiten={(p) => (bearbeitet = p)} />
+			<PostenListe eintraege={data.eintraege} stichtag={data.stichtag} bearbeiten={(p) => (bearbeitet = p)} />
 		{:else}
 			<div class="empty"><p>Zum Beispiel Internet, Rundfunkbeitrag oder Hausratversicherung. Jahreszahlungen werden auf Monate verteilt.</p></div>
 		{/if}
