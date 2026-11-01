@@ -1,3 +1,4 @@
+import type { Vertrag } from './vertrag';
 import {
 	formatDatum,
 	monatsNummer,
@@ -44,6 +45,8 @@ export interface FixkostenPosten {
 	beteiligungen?: Beteiligung[];
 	/** Gewähltes Symbol, sonst schlägt die App eins nach dem Namen vor. */
 	icon?: string | null;
+	/** Vertragsangaben, die nur die App kennt; null, wenn nichts eingetragen ist. */
+	vertrag?: Vertrag | null;
 }
 
 export interface Einstellungen {
