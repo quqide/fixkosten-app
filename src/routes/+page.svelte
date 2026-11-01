@@ -4,7 +4,7 @@
 	import PostenSymbol from '#lib/components/PostenSymbol.svelte';
 	import Ring from '#lib/components/Ring.svelte';
 	import Verlauf from '#lib/components/Verlauf.svelte';
-	import { betragFeld, datumKurz, datumLang, datumZahl, eur, eurGanz, inTagen, zeitpunkt } from '#lib/format.ts';
+	import { betragFeld, datumKurz, datumLang, datumZahl, eur, eurGanz, inTagen, monatJahr, zeitpunkt } from '#lib/format.ts';
 	import type { SubmitFunction } from '$app/forms';
 	import { mitRueckmeldung, zeigeToast } from '#lib/toast.svelte.ts';
 	import { beschreibeAuftrag } from '#lib/rechnung/aufstellung.ts';
@@ -234,6 +234,24 @@
 			<div class="section-head"><h2>So viel brauchst du im nächsten Jahr</h2></div>
 			<div class="card pad"><Verlauf punkte={data.verlauf} /></div>
 			<p class="note">Am meisten Rücklage brauchst du am {datumLang(spitze.datum)}: {eur(spitze.sollCent)}. Danach sinkt sie mit der großen Abbuchung wieder.</p>
+		</div>
+	{/if}
+
+	{#if data.grosseAbbuchungen.length}
+		<div class="section grosse">
+			<div class="section-head"><h2>Größere Abbuchungen</h2><span class="aside">nächste 12 Monate</span></div>
+			<div class="card"><ul class="rows">
+				{#each data.grosseAbbuchungen as m (m.monat)}
+					<li><div class="row">
+						<span class="main">
+							<span class="title">{monatJahr(m.monat)}</span>
+							<span class="detail">{m.abbuchungen.map((a) => `${a.name} ${eur(a.betragCent)}`).join(', ')}</span>
+						</span>
+						<span class="value">{eur(m.summeCent)}</span>
+					</div></li>
+				{/each}
+			</ul></div>
+			<p class="note">Posten, die seltener als monatlich abgehen, mit deinem Anteil. Dafür sparst du jeden Monat an.</p>
 		</div>
 	{/if}
 {/if}

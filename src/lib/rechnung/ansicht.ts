@@ -11,7 +11,7 @@ import { berechneGemeinschaft, type Aufteilungsmodell, type Person, type Positio
 import { berechneRueckstellung, zielVon, type RueckstellungKonfig } from './rueckstellung';
 import type { Rundung } from './rundung';
 import { vergleicheSollIst } from './status';
-import { sollVerlauf } from './verlauf';
+import { grosseAbbuchungen, sollVerlauf } from './verlauf';
 
 export type PersonSchluessel = 'a' | 'b';
 
@@ -169,6 +169,7 @@ export function berechnePersonAnsicht<
 		ausstehendCent,
 		naechste,
 		auftraege,
-		verlauf: posten.length ? sollVerlauf(posten, stichtag, person.ueberweisungstag) : []
+		verlauf: posten.length ? sollVerlauf(posten, stichtag, person.ueberweisungstag) : [],
+		grosseAbbuchungen: grosseAbbuchungen(posten, stichtag)
 	};
 }
