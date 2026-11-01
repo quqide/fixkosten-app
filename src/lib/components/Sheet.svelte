@@ -112,10 +112,11 @@
 	.sheet[open] { display: flex; }
 	.griff { align-self: center; width: 40px; height: 5px; border-radius: 3px; background: var(--separator); margin-top: 8px; flex: none; }
 	.sheet-kopf {
-		display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px;
+		/* Knöpfe behalten ihre Breite, der Titel nimmt nur den Rest und kürzt sich mit „…“. */
+		display: grid; grid-template-columns: minmax(max-content, 1fr) minmax(0, auto) minmax(max-content, 1fr); align-items: center; gap: 8px;
 		padding: 4px 8px; border-bottom: 1px solid var(--separator); flex: none;
 	}
-	.sheet-kopf h2 { font: 700 17px/1.3 var(--font); margin: 0; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60vw; }
+	.sheet-kopf h2 { font: 700 17px/1.3 var(--font); margin: 0; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 	.sheet-knopf {
 		border: 0; background: none; color: var(--tint); font: 500 16px/1 var(--font); min-height: 44px; min-width: 44px;
 		padding: 0 12px; cursor: pointer; justify-self: start; border-radius: 10px;
