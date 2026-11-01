@@ -22,11 +22,11 @@ afterEach(() => {
 	document.body.innerHTML = '';
 });
 
-function oeffne(vertrag: Vertrag | null = null) {
+function oeffne(vertrag: Vertrag | null = null, extra: Record<string, unknown> = {}) {
 	app = mount(PostenDialog, {
 		target: document.body,
 		props: {
-			posten: { name: 'Handy', betragCent: 1000, intervallMonate: 1, buchungsdatum: null, besitzer: 'a', beteiligungen: [], vertrag }
+			posten: { name: 'Handy', betragCent: 1000, intervallMonate: 1, buchungsdatum: null, besitzer: 'a', beteiligungen: [], vertrag, ...extra }
 		}
 	});
 	flushSync();
@@ -72,4 +72,27 @@ describe('Vertrag im Posten-Dialog', () => {
 		tippe('v_frist', 'drei');
 		expect(abschnitt().textContent).not.toContain('Kündigen bis');
 	});
+});
+
+describe('Posten-Dialog im Bearbeitungsfenster', () => {
+	it('„Fertig“ schickt das Posten-Formular ab, Escape schließt ohne Speichern', () => {
+		oeffne(null, { id: 7 });
+		const fertig = [...document.querySelectorAll('button')].find((b) => b.textContent === 'Fertig')!;
+		expect(fertig.type).toBe('submit');
+		expect(fertig.form?.getAttribute('action')).toBe('?/speichern');
+		expect(document.querySelector('dialog h2')!.textContent).toBe('Handy');
+		// Löschen bleibt unten im Fenster.
+		expect(document.querySelector('button.danger')!.textContent).toContain('löschen');
+
+		document.querySelector('dialog')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+		flushSync();
+		expect(document.querySelector('dialog')!.open).toBe(false);
+		expect(document.querySelector('form')).toBeNull();
+	});
+});
+
+it('neuer Posten: Titel „Neue Fixkosten“, kein Löschen', () => {
+	oeffne();
+	expect(document.querySelector('dialog h2')!.textContent).toBe('Neue Fixkosten');
+	expect(document.querySelector('button.danger')).toBeNull();
 });
