@@ -6,7 +6,7 @@ import { oeffneDatenbank, setzeDatenbank } from './db';
 import { speichereActualStand, speichereRueckstellungen, speichereZuordnung, vervollstaendigeRueckstellung } from './repo';
 
 const plan = (id: string, name: string, kategorieId: string | null, extra: Partial<Terminplan> = {}): Terminplan => ({
-	id, name, kontoId: 'giro', kontoName: 'Giro', empfaenger: name, umbuchung: false, betragCent: 1299, betragArt: 'fest',
+	id, name, nameInActual: name, kontoId: 'giro', kontoName: 'Giro', empfaenger: name, umbuchung: false, betragCent: 1299, betragArt: 'fest',
 	rhythmus: { frequenz: 'monthly', intervall: 1, muster: false }, naechsterTermin: '2099-01-15', beendet: false,
 	kategorieId, letzteBuchung: null, ...extra
 });
@@ -28,7 +28,9 @@ beforeEach(() => {
 			plan('p2', 'Spotify', 'k-abo'),
 			plan('p3', 'Strom', null),
 			plan('p4', 'Altvertrag', 'k-abo', { beendet: true }),
-			plan('p5', 'Miete', 'k-miete')
+			plan('p5', 'Miete', 'k-miete'),
+			// Ohne Namen in Actual: Die App zeigt den Empfänger, Actual kennt den Namen „Telekom“ aber nicht.
+			plan('p6', 'Telekom', 'k-abo', { nameInActual: null, empfaenger: 'Telekom' })
 		],
 		kategorien: [
 			{ id: 'k-abo', name: 'Abos', einnahme: false },
@@ -40,7 +42,7 @@ beforeEach(() => {
 	speichereZuordnung(
 		'a',
 		[
-			...['p1', 'p2', 'p3', 'p4'].map((t) => ({ terminplan: t, rolle: 'fixkosten' as const, dauerauftrag: null })),
+			...['p1', 'p2', 'p3', 'p4', 'p6'].map((t) => ({ terminplan: t, rolle: 'fixkosten' as const, dauerauftrag: null })),
 			{ terminplan: 'p5', rolle: 'ignorieren' as const, dauerauftrag: null }
 		],
 		'a'
@@ -65,6 +67,30 @@ describe('Budget-Vorlagen für Actual', () => {
 		]);
 		// Beendete und nicht als Fixkosten zugeordnete Pläne fehlen, Strom hat keine Kategorie.
 		expect(v.ohneKategorie).toEqual(['Strom']);
+	});
+
+	it('Terminpläne ohne Namen in Actual bekommen keine Vorlage, sondern stehen in eigener Liste', () => {
+		mitActual();
+		const v = budgetVorlagen('a')!;
+		expect(v.gruppen.flatMap((g) => g.zeilen.map((z) => z.text))).not.toContain('#template schedule Telekom');
+		expect(v.ohneName).toEqual(['Telekom']);
+	});
+
+	it('ältere Abrufe ohne getrennten Namen: Empfänger oder „Ohne Namen“ gelten als ohne Namen', () => {
+		mitActual();
+		const alt = (id: string, name: string, empfaenger: string | null) => {
+			const p = plan(id, name, 'k-abo', { empfaenger });
+			delete p.nameInActual;
+			return p;
+		};
+		speichereActualStand('a', {
+			terminplaene: [alt('p1', 'Netflix Abo', 'Netflix'), alt('p2', 'Telekom', 'Telekom'), alt('p3', 'Ohne Namen', null)],
+			kategorien: [{ id: 'k-abo', name: 'Abos', einnahme: false }],
+			kategorieSalden: {}
+		});
+		const v = budgetVorlagen('a')!;
+		expect(v.gruppen[0].zeilen.map((z) => z.text)).toEqual(['#template schedule Netflix Abo']);
+		expect(v.ohneName).toEqual(['Telekom', 'Ohne Namen']);
 	});
 
 	it('ohne eingerichtetes Actual gibt es keinen Abschnitt', () => {

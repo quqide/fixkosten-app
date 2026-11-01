@@ -26,9 +26,10 @@ describe('Budget-Vorlagen für Actual', () => {
 	it('gruppiert nach Kategorie, Terminplan-Namen unverändert, ohne Kategorie extra', () => {
 		const v = erzeugeVorlagen({
 			terminplaene: [
-				{ name: 'Netflix', kategorieId: 'k-abo' },
-				{ name: 'Spotify Family ', kategorieId: 'k-abo' },
-				{ name: 'Strom', kategorieId: null }
+				{ name: 'Netflix', nameInActual: 'Netflix', kategorieId: 'k-abo' },
+				{ name: 'Spotify Family ', nameInActual: 'Spotify Family ', kategorieId: 'k-abo' },
+				{ name: 'Strom', nameInActual: 'Strom', kategorieId: null },
+				{ name: 'Telekom', nameInActual: null, kategorieId: 'k-abo' }
 			],
 			rueckstellungen: [r({ name: 'Urlaub', art: 'faellig', zielCent: 1200000, faellig: '2029-03-31', kategorieId: 'k-urlaub' }), r({ name: 'Pause', aktiv: false })],
 			kategorien: [
@@ -48,6 +49,8 @@ describe('Budget-Vorlagen für Actual', () => {
 			{ kategorieId: 'k-urlaub', kategorie: 'Urlaub', zeilen: [{ text: '#template 12000 by 2029-03', quelle: 'Rücklage „Urlaub“' }] }
 		]);
 		expect(v.ohneKategorie).toEqual(['Strom']);
+		// Ohne Namen in Actual gäbe „#template schedule Telekom“ keinen Treffer.
+		expect(v.ohneName).toEqual(['Telekom']);
 		expect(vorlagenText(v.gruppen[0])).toBe('#template schedule Netflix\n#template schedule Spotify Family ');
 	});
 });

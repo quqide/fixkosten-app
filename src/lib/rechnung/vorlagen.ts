@@ -7,7 +7,10 @@ import type { IsoDatum } from './datum';
 import type { RueckstellungsArt } from './rueckstellung';
 
 export interface VorlagenTerminplan {
+	/** Anzeigename in der App. */
 	name: string;
+	/** Name in Actual; null, wenn der Terminplan dort keinen hat. */
+	nameInActual: string | null;
 	kategorieId: string | null;
 }
 
@@ -61,7 +64,7 @@ export function erzeugeVorlagen(e: {
 	terminplaene: VorlagenTerminplan[];
 	rueckstellungen: VorlagenRueckstellung[];
 	kategorien: { id: string; name: string }[];
-}): { gruppen: VorlagenGruppe[]; ohneKategorie: string[] } {
+}): { gruppen: VorlagenGruppe[]; ohneKategorie: string[]; ohneName: string[] } {
 	const gruppen = new Map<string, VorlagenGruppe>();
 	const gruppe = (id: string) => {
 		let g = gruppen.get(id);
@@ -72,10 +75,14 @@ export function erzeugeVorlagen(e: {
 		return g;
 	};
 	const ohneKategorie: string[] = [];
+	const ohneName: string[] = [];
 	for (const t of e.terminplaene) {
+		// Ohne Namen in Actual findet „#template schedule …“ keinen Terminplan; erst dort benennen.
+		if (!t.nameInActual) ohneName.push(t.name);
 		// Der Name muss in Actual exakt stimmen, deshalb unverändert.
-		if (t.kategorieId) gruppe(t.kategorieId).zeilen.push({ text: `#template schedule ${t.name}`, quelle: `Fixkosten „${t.name}“` });
-		else ohneKategorie.push(t.name);
+		else if (t.kategorieId)
+			gruppe(t.kategorieId).zeilen.push({ text: `#template schedule ${t.nameInActual}`, quelle: `Fixkosten „${t.name}“` });
+		else ohneKategorie.push(t.nameInActual);
 	}
 	for (const r of e.rueckstellungen) {
 		const text = rueckstellungsVorlage(r);
@@ -83,7 +90,8 @@ export function erzeugeVorlagen(e: {
 	}
 	return {
 		gruppen: [...gruppen.values()].sort((a, b) => a.kategorie.localeCompare(b.kategorie, 'de')),
-		ohneKategorie
+		ohneKategorie,
+		ohneName
 	};
 }
 

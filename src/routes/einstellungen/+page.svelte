@@ -407,7 +407,7 @@ ACTUAL_{p.id.toUpperCase()}_SYNC_ID=Sync-ID aus Actual (Einstellungen → Erweit
 			</div>
 			{#if !data.vorlagen}
 				<div class="field"><span class="help">Noch kein Abruf aus Actual. Nach dem ersten Abruf stehen hier die Vorlagen.</span></div>
-			{:else if !data.vorlagen.gruppen.length && !data.vorlagen.ohneKategorie.length}
+			{:else if !data.vorlagen.gruppen.length && !data.vorlagen.ohneKategorie.length && !data.vorlagen.ohneName.length}
 				<div class="field"><span class="help">Noch nichts zu kopieren: Ordne Terminpläne als Fixkosten zu oder verknüpf eine Rücklage mit einer Kategorie.</span></div>
 			{:else}
 				{#each data.vorlagen.gruppen as g (g.kategorieId)}
@@ -424,6 +424,12 @@ ACTUAL_{p.id.toUpperCase()}_SYNC_ID=Sync-ID aus Actual (Einstellungen → Erweit
 					<div class="field">
 						<span class="label">Ohne Kategorie, erst in Actual zuordnen</span>
 						<span class="help">{data.vorlagen.ohneKategorie.map((n) => `„${n}“`).join(', ')}: Diese Terminpläne haben in Actual keine Kategorie. Ordne sie dort zu und ruf neu ab.</span>
+					</div>
+				{/if}
+				{#if data.vorlagen.ohneName.length}
+					<div class="field">
+						<span class="label">Ohne Namen, erst in Actual benennen</span>
+						<span class="help">{data.vorlagen.ohneName.map((n) => `„${n}“`).join(', ')}: Diese Terminpläne haben in Actual keinen Namen, die App zeigt nur den Empfänger. Gib ihnen dort einen Namen und ruf neu ab.</span>
 					</div>
 				{/if}
 			{/if}

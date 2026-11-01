@@ -207,13 +207,25 @@ export function zuordnungAnsicht(person: PersonId) {
  * Vorlagen für das Budget in Actual aus dem letzten Abruf: Terminpläne mit der Rolle Fixkosten und
  * Rückstellungen mit Kategorie. Ohne eingerichtetes Actual oder ohne Abruf: null.
  */
+/**
+ * Der Name des Terminplans in Actual. Ältere Schnappschüsse kennen ihn nicht getrennt; dort war der
+ * Anzeigename bei fehlendem Namen der Empfänger oder „Ohne Namen“, also gilt das als „ohne Namen“,
+ * bis neu abgerufen wird.
+ */
+function nameInActual(t: Terminplan): string | null {
+	if (t.nameInActual !== undefined) return t.nameInActual;
+	return t.name === 'Ohne Namen' || t.name === t.empfaenger ? null : t.name;
+}
+
 export function budgetVorlagen(person: PersonId) {
 	if (!actualEingerichtet(person)) return null;
 	const stand = ladeActualStand<Schnappschuss>(person);
 	if (!stand) return null;
 	const rollen = rollenVon(person);
 	return erzeugeVorlagen({
-		terminplaene: stand.daten.terminplaene.filter((t) => !t.beendet && rollen.get(t.id)?.typ === 'fixkosten'),
+		terminplaene: stand.daten.terminplaene
+			.filter((t) => !t.beendet && rollen.get(t.id)?.typ === 'fixkosten')
+			.map((t) => ({ name: t.name, nameInActual: nameInActual(t), kategorieId: t.kategorieId })),
 		rueckstellungen: rueckstellungenMitStand(person, heute()).map((r) => ({
 			name: r.eintrag.name,
 			art: r.eintrag.art,
