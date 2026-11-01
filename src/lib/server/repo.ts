@@ -7,6 +7,7 @@ import { type RueckstellungKonfig, type RueckstellungsArt } from '#lib/rechnung/
 import { db, legeAuftraegeAn, transaktion, type Besitzer, type PersonId } from './db.ts';
 import { pruefeAuftraege, pruefeVertrag } from './formular.ts';
 import { istPostenIcon } from '#lib/postenIcons.ts';
+import { gueltigesThema } from '#lib/themes.ts';
 import { AUSBLENDBARE_ARTEN, type WarnungArt } from '#lib/rechnung/terminplan.ts';
 import { istLeer, type FristEinheit, type Vertrag } from '#lib/rechnung/vertrag.ts';
 
@@ -127,7 +128,7 @@ function zuPerson(z: Zeile): Person {
 		actualKontoId: (z.actual_konto_id as string | null) ?? null,
 		actualKontoName: (z.actual_konto_name as string | null) ?? null,
 		actualGehaltKategorie: (z.actual_gehalt_kategorie as string | null) ?? null,
-		theme: z.theme as string,
+		theme: gueltigesThema(z.theme as string),
 		hell: z.hell as Hell
 	};
 }

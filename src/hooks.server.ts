@@ -1,7 +1,7 @@
 import type { Handle, HandleServerError } from '@sveltejs/kit/hooks';
 import { DatenordnerFehler, type PersonId } from '#lib/server/db.ts';
 import { ladePerson } from '#lib/server/repo.ts';
-import { STANDARD_THEME, THEMES } from '#lib/themes.ts';
+import { gueltigesThema } from '#lib/themes.ts';
 
 /**
  * Person aus einem Header der Anmeldung (z. B. AUTH_HEADER=X-authentik-username),
@@ -26,7 +26,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	if (event.url.pathname.startsWith('/api/health')) return resolve(event);
 
 	const person = event.locals.person ? ladePerson(event.locals.person) : null;
-	const palette = person && THEMES[person.theme] ? person.theme : STANDARD_THEME;
+	const palette = gueltigesThema(person?.theme);
 	const hell = person && person.hell !== 'auto' ? ` data-theme="${person.hell}"` : '';
 
 	return resolve(event, {

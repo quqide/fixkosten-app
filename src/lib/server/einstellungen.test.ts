@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { actions } from '../../routes/einstellungen/+page.server';
-import { oeffneDatenbank, setzeDatenbank } from './db';
-import { ladeAuftraege } from './repo';
+import { db, oeffneDatenbank, setzeDatenbank } from './db';
+import { ladeAuftraege, ladePerson } from './repo';
 
 const anfrage = (felder: Record<string, string>) => {
 	const f = new FormData();
@@ -25,5 +25,26 @@ describe('Aktion Daueraufträge', () => {
 		expect(r.status).toBe(400);
 		expect(r.data.fehler.allgemein).toMatch(/doppelt/);
 		expect(ladeAuftraege('a')).toEqual(vorher);
+	});
+});
+
+describe('Darstellung', () => {
+	const darstellung = (theme: string) => {
+		const f = new FormData();
+		f.set('theme', theme);
+		f.set('hell', 'auto');
+		return actions.darstellung({ request: new Request('http://x/', { method: 'POST', body: f }), locals: { person: 'a' } } as never);
+	};
+
+	it('neue Themen lassen sich wählen und bleiben gespeichert', async () => {
+		await darstellung('lagune');
+		expect(ladePerson('a').theme).toBe('lagune');
+	});
+
+	it('ein gespeichertes unbekanntes Thema ergibt Salbei', async () => {
+		db().prepare(`UPDATE personen SET theme = 'verschwunden' WHERE id = 'a'`).run();
+		expect(ladePerson('a').theme).toBe('salbei');
+		// Und ein unbekanntes Thema lässt sich nicht speichern.
+		expect(await darstellung('verschwunden')).toMatchObject({ status: 400 });
 	});
 });

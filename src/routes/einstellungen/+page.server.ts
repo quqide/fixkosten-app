@@ -137,7 +137,7 @@ export const actions: Actions = {
 		const f = await request.formData();
 		const theme = String(f.get('theme') ?? '');
 		const hell = String(f.get('hell') ?? '') as Hell;
-		if (!THEMES[theme] || !['auto', 'light', 'dark'].includes(hell)) return fail(400, { bereich: 'darstellung', fehler: {} });
+		if (!Object.hasOwn(THEMES, theme) || !['auto', 'light', 'dark'].includes(hell)) return fail(400, { bereich: 'darstellung', fehler: {} });
 		aenderePerson(wer, { theme, hell }, wer, 'Darstellung geändert');
 		return {};
 	},
