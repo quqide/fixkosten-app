@@ -17,14 +17,15 @@ export type PersonSchluessel = 'a' | 'b';
 
 // ---------- Gemeinschaftskonto ----------
 
-export interface GemeinschaftEingaben<
-	K extends { positionen: Position[]; modell: Aufteilungsmodell; rundung: Rundung | null } = {
-		positionen: Position[];
-		modell: Aufteilungsmodell;
-		rundung: Rundung | null;
-	},
-	F extends FixkostenPosten = FixkostenPosten
-> {
+/** Was die Rechnung vom Gemeinschaftskonto braucht. */
+export interface KontoDaten {
+	positionen: Position[];
+	modell: Aufteilungsmodell;
+	rundung: Rundung | null;
+}
+
+/** K und F: die genaueren Typen des Aufrufers, damit sie im Ergebnis erhalten bleiben. */
+export interface GemeinschaftEingaben<K extends KontoDaten = KontoDaten, F extends FixkostenPosten = FixkostenPosten> {
 	konto: K;
 	/** Gemeinsame Fixkosten. */
 	posten: F[];
@@ -32,8 +33,11 @@ export interface GemeinschaftEingaben<
 	personen: [Person, Person];
 }
 
-export function berechneGemeinschaftAnsicht<E extends GemeinschaftEingaben>(e: E, stichtag: IsoDatum) {
-	const { konto, posten } = e as { konto: E['konto']; posten: E['posten'] };
+export function berechneGemeinschaftAnsicht<K extends KontoDaten, F extends FixkostenPosten>(
+	e: GemeinschaftEingaben<K, F>,
+	stichtag: IsoDatum
+) {
+	const { konto, posten } = e;
 	const rechnung = berechneGemeinschaft(
 		{ positionen: konto.positionen, fixkosten: posten, modell: konto.modell, rundung: konto.rundung ?? undefined },
 		e.personen,
@@ -87,22 +91,35 @@ export interface PersonDaten {
 	abgleich: Pick<Abgleich, 'ausstehendCent'> | null;
 }
 
-export interface PersonAnsichtEingaben {
+/**
+ * Die Typparameter sind die genaueren Typen des Aufrufers (z. B. `Person`, `PostenEintrag`,
+ * `RueckstellungEintrag`); so kommen sie unverändert im Ergebnis an. Eigene und gemeinsame Posten teilen F.
+ */
+export interface PersonAnsichtEingaben<
+	P extends PersonDaten = PersonDaten,
+	F extends FixkostenPosten = FixkostenPosten,
+	R extends RueckstellungKonfig = RueckstellungKonfig,
+	K extends KontoDaten = KontoDaten,
+	A extends AuftragKonfig = AuftragKonfig
+> {
 	id: PersonSchluessel;
-	person: PersonDaten;
-	posten: FixkostenPosten[];
-	rueckstellungen: RueckstellungEingabe[];
-	gemeinschaft: GemeinschaftEingaben;
-	auftraege: AuftragKonfig[];
+	person: P;
+	posten: F[];
+	rueckstellungen: RueckstellungEingabe<R>[];
+	gemeinschaft: GemeinschaftEingaben<K, F>;
+	auftraege: A[];
 }
 
-export function berechnePersonAnsicht<E extends PersonAnsichtEingaben>(e: E, stichtag: IsoDatum) {
-	const { id } = e;
-	const person = e.person as E['person'];
-	const posten = e.posten as E['posten'];
-	const auftraege = e.auftraege as E['auftraege'];
-	const rueckstellungen = berechneRueckstellungen(e.rueckstellungen as E['rueckstellungen'][number][], person, stichtag);
-	const gemeinschaft = berechneGemeinschaftAnsicht(e.gemeinschaft as E['gemeinschaft'], stichtag);
+export function berechnePersonAnsicht<
+	P extends PersonDaten,
+	F extends FixkostenPosten,
+	R extends RueckstellungKonfig,
+	K extends KontoDaten,
+	A extends AuftragKonfig
+>(e: PersonAnsichtEingaben<P, F, R, K, A>, stichtag: IsoDatum) {
+	const { id, person, posten, auftraege } = e;
+	const rueckstellungen = berechneRueckstellungen(e.rueckstellungen, person, stichtag);
+	const gemeinschaft = berechneGemeinschaftAnsicht(e.gemeinschaft, stichtag);
 	const einstellungen = { stichtag, ueberweisungstag: person.ueberweisungstag };
 	const fixkosten = berechneFixkosten(posten, einstellungen);
 	const aufstellung = berechneAufstellung({
