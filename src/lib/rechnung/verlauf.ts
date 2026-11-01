@@ -1,5 +1,5 @@
-import { berechneFixkosten, type FixkostenPosten } from './fixkosten';
-import { formatDatum, parseDatum, type IsoDatum } from './datum';
+import { berechneFixkosten, buchungenUm, type FixkostenPosten } from './fixkosten';
+import { formatDatum, parseDatum, plusMonate, vergleiche, type IsoDatum } from './datum';
 
 export interface Verlaufspunkt {
 	datum: IsoDatum;
@@ -22,4 +22,50 @@ export function sollVerlauf(
 		punkte.push({ datum, sollCent: berechneFixkosten(posten, { stichtag: datum, ueberweisungstag }).sollCent });
 	}
 	return punkte;
+}
+
+export interface GrosseAbbuchung {
+	name: string;
+	datum: IsoDatum;
+	/** Eigener Anteil: Betrag abzüglich der Beteiligungen anderer. */
+	betragCent: number;
+}
+
+export interface AbbuchungsMonat {
+	/** JJJJ-MM */
+	monat: string;
+	abbuchungen: GrosseAbbuchung[];
+	summeCent: number;
+}
+
+/**
+ * Abbuchungen von Posten, die seltener als monatlich abgehen, ab `von` für die nächsten `monate`
+ * Monate, nach Monat gruppiert. Monate ohne solche Abbuchung fehlen. Es zählt der eigene Anteil.
+ */
+export function grosseAbbuchungen(posten: FixkostenPosten[], von: IsoDatum, monate = 12): AbbuchungsMonat[] {
+	const start = parseDatum(von);
+	const ende = plusMonate(start, monate);
+	const alle: GrosseAbbuchung[] = [];
+	for (const p of posten) {
+		if (p.intervallMonate <= 1 || !p.buchungsdatum) continue;
+		const eigenCent = p.betragCent - (p.beteiligungen ?? []).reduce((s, b) => s + b.betragCent, 0);
+		if (eigenCent <= 0) continue;
+		const basis = parseDatum(p.buchungsdatum);
+		// Jeder Termin wird vom ursprünglichen Datum aus gerechnet (wie in der Fixkosten-Rechnung).
+		const { letzte } = buchungenUm(basis, p.intervallMonate, start);
+		let schritt = (letzte.j - basis.j) * 12 + (letzte.m - basis.m);
+		for (let termin = letzte; vergleiche(termin, ende) < 0; schritt += p.intervallMonate, termin = plusMonate(basis, schritt)) {
+			if (vergleiche(termin, start) >= 0) alle.push({ name: p.name, datum: formatDatum(termin), betragCent: eigenCent });
+		}
+	}
+	alle.sort((a, b) => a.datum.localeCompare(b.datum) || a.name.localeCompare(b.name, 'de'));
+	const nachMonat = new Map<string, AbbuchungsMonat>();
+	for (const a of alle) {
+		const monat = a.datum.slice(0, 7);
+		const m = nachMonat.get(monat) ?? { monat, abbuchungen: [], summeCent: 0 };
+		m.abbuchungen.push(a);
+		m.summeCent += a.betragCent;
+		nachMonat.set(monat, m);
+	}
+	return [...nachMonat.values()];
 }

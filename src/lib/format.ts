@@ -41,6 +41,11 @@ export function datumKnapp(iso: string) {
 	return `${d.t}. ${m.length > 4 ? `${m.slice(0, 3)}.` : m}`;
 }
 
+/** „2027-03“ → „März 2027“ */
+export function monatJahr(monat: string) {
+	return `${MONATE[Number(monat.slice(5, 7)) - 1]} ${monat.slice(0, 4)}`;
+}
+
 export const monatsKuerzel = (m: number) => MONATE[m - 1].slice(0, 3);
 
 export function inTagen(iso: string, heute: string) {
