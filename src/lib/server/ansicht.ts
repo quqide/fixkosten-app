@@ -16,6 +16,7 @@ import {
 	ladePosten,
 	ladeActualStand,
 	ladeRueckstellungen,
+	type GemeinschaftEintrag,
 	type PostenEintrag,
 	type RueckstellungEintrag
 } from './repo.ts';
@@ -23,7 +24,7 @@ import {
 export const anderePerson = (id: PersonId): PersonId => (id === 'a' ? 'b' : 'a');
 
 /** Alles, was die Rechnung des Gemeinschaftskontos braucht. */
-export function ladeGemeinschaftEingaben() {
+export function ladeGemeinschaftEingaben(): GemeinschaftEingaben<GemeinschaftEintrag, PostenEintrag> {
 	const [a, b] = ladePersonen();
 	return {
 		konto: ladeGemeinschaft(),
@@ -31,7 +32,7 @@ export function ladeGemeinschaftEingaben() {
 		personen: [
 			{ name: a.name, nettoCent: a.nettoCent },
 			{ name: b.name, nettoCent: b.nettoCent }
-		] as GemeinschaftEingaben['personen']
+		]
 	};
 }
 

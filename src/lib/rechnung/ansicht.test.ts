@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { berechnePersonAnsicht, type PersonAnsichtEingaben, type RueckstellungEingabe } from './ansicht';
 import { berechneAufstellung, standardAuftraege, type Kontenmodus } from './aufstellung';
@@ -88,10 +88,37 @@ describe('Rechenfunktion der Personenansicht', () => {
 		expect(a.vergleich?.istBereinigtCent).toBe(400000 - a.ausstehendCent);
 	});
 
-	it('greift nicht auf die Datenbank zu: kein Import aus src/lib/server', () => {
-		const quelle = readFileSync(new URL('./ansicht.ts', import.meta.url), 'utf8');
-		const importe = [...quelle.matchAll(/from\s+'([^']+)'/g)].map((m) => m[1]);
-		expect(importe.length).toBeGreaterThan(0);
-		expect(importe.filter((i) => i.includes('server') || i.startsWith('$'))).toEqual([]);
+	it('warnt bei Rücklagen, deren Stand aus Actual fehlt', () => {
+		const e = eingaben(1);
+		const ohneStand = (name: string, art: 'faellig' | 'ziel'): RueckstellungEingabe => ({
+			eintrag: {
+				name, art, betragCent: 5000, zielCent: 100000, zielNettoFaktor: null, faellig: art === 'faellig' ? '2027-09-30' : null,
+				zielkonto: 'Tagesgeld', wkn: null, aktiv: true
+			},
+			standCent: null,
+			standQuelle: null,
+			hinweis: 'Kategorie in Actual nicht gefunden.'
+		});
+		const a = berechnePersonAnsicht({ ...e, rueckstellungen: [ohneStand('Auto', 'faellig'), ohneStand('Notgroschen', 'ziel')] }, stichtag);
+		expect(a.rueckstellungen.map((r) => [r.status, r.rateCent])).toEqual([
+			['unbekannt', 0],
+			['unbekannt', 5000]
+		]);
+		expect(a.aufstellung.warnungen).toEqual([
+			'Rücklage „Auto“: Kategorie in Actual nicht gefunden. Ohne Stand ist keine Rate eingeplant.',
+			'Rücklage „Notgroschen“: Kategorie in Actual nicht gefunden. Die Rate ist nicht am Ziel gekappt.'
+		]);
+	});
+
+	it('greift nicht auf die Datenbank zu: kein Modul in src/lib/rechnung importiert aus src/lib/server', () => {
+		const ordner = new URL('./', import.meta.url);
+		const dateien = readdirSync(ordner).filter((d) => d.endsWith('.ts') && !d.endsWith('.test.ts'));
+		expect(dateien).toContain('ansicht.ts');
+		for (const datei of dateien) {
+			const quelle = readFileSync(new URL(datei, ordner), 'utf8');
+			// Statische Importe, Re-Exporte und dynamische import().
+			const ziele = [...quelle.matchAll(/(?:from\s+|import\s*\(\s*|import\s+)['"]([^'"]+)['"]/g)].map((m) => m[1]);
+			expect(ziele.filter((z) => z.includes('server') || z.startsWith('$')), datei).toEqual([]);
+		}
 	});
 });
