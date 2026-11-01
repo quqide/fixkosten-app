@@ -3,7 +3,9 @@ import { leseBetrag, leseGanzzahl, leseProzent } from '#lib/eingabe.ts';
 import { auftraegeFuerModus } from '#lib/rechnung/aufstellung.ts';
 import { leseAuftraege } from '#lib/server/formular.ts';
 import { heute } from '#lib/rechnung/datum.ts';
-import { rueckstellungenMitStand } from '#lib/server/ansicht.ts';
+import { personAnsicht, rueckstellungenMitStand } from '#lib/server/ansicht.ts';
+import { zielVon } from '#lib/rechnung/rueckstellung.ts';
+import type { AufstellungEingaben } from '#lib/rechnung/aufstellung.ts';
 import { angemeldet, hinweisAktionen } from '#lib/server/aktionen.ts';
 import { ActualFehler, actualEingerichtet, ladeKonten, type ActualKonto } from '#lib/server/actual.ts';
 import {
@@ -48,6 +50,18 @@ async function kontenOderFehler(id: PersonId): Promise<{ konten: ActualKonto[]; 
 	}
 }
 
+/** Was die Vorschau „Diesen Monat“ der Daueraufträge außer den Aufträgen selbst braucht. */
+function planBasis(id: PersonId): Omit<AufstellungEingaben, 'auftraege'> {
+	const a = personAnsicht(id, heute());
+	return {
+		modus: a.person.modus,
+		nettoCent: a.person.nettoCent,
+		rueckstellungen: a.rueckstellungen.map((r) => ({ name: r.eintrag.name, betragCent: r.rateCent, zielkonto: zielVon(r.eintrag) })),
+		gemeinschaftCent: a.gemeinschaft.anteil[id].betragCent,
+		fixkostenMonatlichCent: a.fixkosten.summeMonatlichCent
+	};
+}
+
 export const load: PageServerLoad = ({ locals }) => {
 	const id = angemeldet(locals);
 	const actual = actualEingerichtet(id);
@@ -61,6 +75,7 @@ export const load: PageServerLoad = ({ locals }) => {
 		ausgeblendet: ausgeblendeteHinweise(id),
 		person: ladePerson(id),
 		auftraege: ladeAuftraege(id),
+		planBasis: planBasis(id),
 		rueckstellungen: rueckstellungenMitStand(id, heute()),
 		// Ausgabe-Kategorien aus dem letzten Abruf, für den Stand der Rückstellungen.
 		ausgabeKategorien: actual ? (ladeActualStand<Schnappschuss>(id)?.daten.kategorien.filter((k) => !k.einnahme) ?? []) : [],
