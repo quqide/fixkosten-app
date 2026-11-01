@@ -631,8 +631,19 @@ function zuAenderung(z: Zeile): Aenderung {
 		person: z.person as PersonId,
 		bereich: z.bereich as string,
 		text: z.text as string,
-		kannRueckgaengig: z.rueckgaengig != null && nochAnwendbar(JSON.parse(z.rueckgaengig as string) as Rueckgaengig, z.text as string)
+		kannRueckgaengig: z.rueckgaengig != null && anwendbar(z.rueckgaengig as string, z.text as string)
 	};
+}
+
+/** Ein beschädigter Eintrag darf nicht den ganzen Verlauf blockieren; er ist dann nur nicht rückgängig zu machen. */
+function anwendbar(json: string, text: string): boolean {
+	let r: unknown;
+	try {
+		r = JSON.parse(json);
+	} catch {
+		return false;
+	}
+	return typeof r === 'object' && r !== null && nochAnwendbar(r as Rueckgaengig, text);
 }
 
 /**
@@ -736,7 +747,7 @@ export function importiere(s: Sicherung, wer: PersonId) {
 		// Nur echte Texte umbenennen, alles andere fängt die Prüfung ab.
 		const eindeutig =
 			Array.isArray(liste) && liste.every((a) => typeof a?.name === 'string') ? eindeutigeNamen(liste) : liste;
-		if (Array.isArray(eindeutig)) {
+		if (eindeutig !== liste) {
 			eindeutig.forEach((a, i) => {
 				if (a.name !== (liste as AuftragKonfig[])[i].name) umbenannt.push(`„${(liste as AuftragKonfig[])[i].name.trim()}“ → „${a.name}“`);
 			});

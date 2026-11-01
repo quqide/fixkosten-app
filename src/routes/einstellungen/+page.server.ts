@@ -55,7 +55,7 @@ export const load: PageServerLoad = ({ locals }) => {
 		// Wird nachgeliefert, damit die Seite nicht auf Actual warten muss.
 		actualKonten: actual ? kontenOderFehler(id) : null,
 		zuordnung: actual ? zuordnungAnsicht(id) : null,
-		warnungen: actual ? warnungenFuer(id) : [],
+		warnungen: warnungenFuer(id),
 		ausgeblendet: ausgeblendeteHinweise(id),
 		person: ladePerson(id),
 		auftraege: ladeAuftraege(id),

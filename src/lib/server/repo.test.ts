@@ -226,6 +226,20 @@ describe('Datenhaltung', () => {
 		expect(() => importiere(s, 'a')).toThrow('ungültige Daueraufträge');
 	});
 
+	it('meldet einen leeren Auftrag in der Sicherung verständlich', () => {
+		const s = JSON.parse(JSON.stringify(exportiere()));
+		s.auftraege.a = [null];
+		expect(() => importiere(s, 'a')).toThrow('ungültige Daueraufträge');
+	});
+
+	it('zeigt den Verlauf auch mit einem beschädigten Eintrag', () => {
+		const r = db()
+			.prepare('INSERT INTO aenderungen (zeit, person, bereich, text, rueckgaengig) VALUES (?, ?, ?, ?, ?)')
+			.run(new Date().toISOString(), 'a', 'fixkosten', 'Kaputt', '{nicht json');
+		const id = Number(r.lastInsertRowid);
+		expect(letzteAenderungen(50).find((a) => a.id === id)?.kannRueckgaengig).toBe(false);
+	});
+
 	it('verwirft unbekannte Symbole beim Import', () => {
 		speicherePosten({ ...icloud, icon: 'wolke' }, 'a');
 		const sicherung = JSON.parse(JSON.stringify(exportiere()));
