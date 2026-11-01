@@ -2,7 +2,6 @@
 	import type { FixkostenPosten, Zeile } from '#lib/rechnung/fixkosten.ts';
 	import type { Warnung } from '#lib/rechnung/terminplan.ts';
 	import { datumKnapp, datumZahl, eur, intervallText } from '#lib/format.ts';
-	import { heute } from '#lib/rechnung/datum.ts';
 	import { letzterKuendigungstag } from '#lib/rechnung/vertrag.ts';
 	import PostenSymbol from './PostenSymbol.svelte';
 	import Icon from './Icon.svelte';
@@ -16,17 +15,25 @@
 	let {
 		eintraege,
 		bearbeiten,
-		stichtag = heute()
+		stichtag
 	}: {
 		eintraege: Eintrag<FixkostenPosten & { id?: number; actualTerminplan?: string | null; meldungen?: Warnung[] }>[];
 		bearbeiten: (p: FixkostenPosten & { id?: number; actualTerminplan?: string | null; meldungen?: Warnung[] }) => void;
-		stichtag?: string;
+		/** Vom Server, damit Server und Browser denselben Tag zeigen. */
+		stichtag: string;
 	} = $props();
 
 	function vertragText(p: FixkostenPosten) {
 		const k = letzterKuendigungstag(p.vertrag, stichtag);
 		if (!k) return null;
-		return k.status === 'abgelaufen' ? `Laufzeit am ${datumZahl(k.laufzeitEnde)} abgelaufen` : `kündbar bis ${datumZahl(k.letzterKuendigungstag)}`;
+		if (k.status === 'abgelaufen') return `Laufzeit am ${datumZahl(k.laufzeitEnde)} abgelaufen`;
+		// Frist für dieses Laufzeitende schon vorbei: kein vergangenes „kündbar bis“ zeigen.
+		if (k.letzterKuendigungstag < stichtag) {
+			return p.vertrag?.verlaengerungMonate
+				? `verlängert sich am ${datumZahl(k.laufzeitEnde)}`
+				: `Frist verpasst, läuft bis ${datumZahl(k.laufzeitEnde)}`;
+		}
+		return `kündbar bis ${datumZahl(k.letzterKuendigungstag)}`;
 	}
 
 	const summe = $derived(
@@ -44,13 +51,14 @@
 
 <ul class="rows">
 	{#each eintraege as e (e.posten.id)}
+		{@const vt = vertragText(e.posten)}
 		<li>
 			<button type="button" class="row" onclick={() => bearbeiten(e.posten)}>
 				<PostenSymbol name={e.posten.name} icon={e.posten.icon} klasse={artKlasse(e.posten.art)} />
 				<span class="main">
 					<span class="title">{e.posten.name}</span>
 					<span class="detail">
-						{eur(e.posten.betragCent)} {intervallText(e.posten.intervallMonate)}{#if e.zeile.naechsteBuchung}{' · '}{datumKnapp(e.zeile.naechsteBuchung)}{/if}{#if vertragText(e.posten)}{' · '}{vertragText(e.posten)}{/if}{#if e.posten.actualTerminplan}{' · '}<span class="quelle">Actual</span>{#if e.posten.meldungen?.length}{@const m = meldungenAnzeige(e.posten.meldungen)}{' '}<span
+						{eur(e.posten.betragCent)} {intervallText(e.posten.intervallMonate)}{#if e.zeile.naechsteBuchung}{' · '}{datumKnapp(e.zeile.naechsteBuchung)}{/if}{#if vt}{' · '}{vt}{/if}{#if e.posten.actualTerminplan}{' · '}<span class="quelle">Actual</span>{#if e.posten.meldungen?.length}{@const m = meldungenAnzeige(e.posten.meldungen)}{' '}<span
 									class="meldung"
 									class:warnung={m.warnung}
 									role="img"
