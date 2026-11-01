@@ -4,7 +4,13 @@ import type { IsoDatum } from './datum';
 /** Ein Terminplan aus Actual Budget, auf das reduziert, was die App braucht. Ausgaben positiv. */
 export interface Terminplan {
 	id: string;
+	/** Anzeigename: der Name aus Actual, sonst der Empfänger oder „Ohne Namen“. */
 	name: string;
+	/**
+	 * Der Name, so wie er in Actual steht (null: Terminplan hat dort keinen Namen).
+	 * Fehlt in Schnappschüssen von vor diesem Feld.
+	 */
+	nameInActual?: string | null;
 	kontoId: string | null;
 	kontoName: string | null;
 	empfaenger: string | null;

@@ -206,6 +206,7 @@ export function ladeAbgleich(
 				return {
 					id: t.id,
 					name: t.name || empfaenger || 'Ohne Namen',
+					nameInActual: t.name || null,
 					kontoId: t.account ?? null,
 					kontoName: t.account ? (kontoName.get(t.account) ?? null) : null,
 					empfaenger,

@@ -4,7 +4,9 @@
 	import { betragFeld, eur, intervallText, zeitpunkt } from '#lib/format.ts';
 	import { THEMES } from '#lib/themes.ts';
 	import { SCHRITTE } from '#lib/rechnung/rundung.ts';
-	import { mitRueckmeldung, rueckgaengig, toast } from '#lib/toast.svelte.ts';
+	import { mitRueckmeldung, rueckgaengig, toast, zeigeToast } from '#lib/toast.svelte.ts';
+	import { kopiere } from '#lib/kopieren.ts';
+	import { vorlagenText, type VorlagenGruppe } from '#lib/rechnung/vorlagen.ts';
 	import { hinweisSchluessel, istAusblendbar } from '#lib/rechnung/terminplan.ts';
 	import type { PageProps } from './$types';
 
@@ -121,6 +123,11 @@
 	async function verlaufRueckgaengig(id: number) {
 		toast.undoId = id;
 		await rueckgaengig();
+	}
+
+	async function kopiereVorlagen(g: VorlagenGruppe) {
+		const ok = await kopiere(vorlagenText(g));
+		zeigeToast(ok ? `Vorlagen für „${g.kategorie}“ kopiert.` : 'Kopieren ging nicht. Markier die Zeilen und kopier sie von Hand.');
 	}
 </script>
 
@@ -390,6 +397,46 @@ ACTUAL_{p.id.toUpperCase()}_SYNC_ID=Sync-ID aus Actual (Einstellungen → Erweit
 	</div>
 </div>
 
+{#if data.actual}
+	<details class="section vorlagen">
+		<summary>Vorlagen für dein Budget in Actual</summary>
+		<div class="card">
+			<div class="field">
+				<p class="help-text">Kopier diese Zeilen in die Notiz der jeweiligen Kategorie in Actual. Dann budgetiert Actual dieselben Raten wie die App. Die App selbst schreibt nichts in Actual.</p>
+				<p class="help-text">Vorlagen sind in Actual noch eine experimentelle Funktion: Schalte sie dort unter Einstellungen → Experimentelle Funktionen ein und wähl danach im Budget „Vorlagen anwenden“. Die Namen der Terminpläne müssen exakt stimmen, deshalb übernimmt die App sie unverändert.</p>
+			</div>
+			{#if !data.vorlagen}
+				<div class="field"><span class="help">Noch kein Abruf aus Actual. Nach dem ersten Abruf stehen hier die Vorlagen.</span></div>
+			{:else if !data.vorlagen.gruppen.length && !data.vorlagen.ohneKategorie.length && !data.vorlagen.ohneName.length}
+				<div class="field"><span class="help">Noch nichts zu kopieren: Ordne Terminpläne als Fixkosten zu oder verknüpf eine Rücklage mit einer Kategorie.</span></div>
+			{:else}
+				{#each data.vorlagen.gruppen as g (g.kategorieId)}
+					<div class="field vorlage">
+						<div class="vorlage-kopf">
+							<span class="label">{g.kategorie}</span>
+							<button type="button" class="secondary" onclick={() => kopiereVorlagen(g)}>Kopieren</button>
+						</div>
+						<pre>{vorlagenText(g)}</pre>
+						<span class="help">{g.zeilen.map((z) => z.quelle).join(', ')}</span>
+					</div>
+				{/each}
+				{#if data.vorlagen.ohneKategorie.length}
+					<div class="field">
+						<span class="label">Ohne Kategorie, erst in Actual zuordnen</span>
+						<span class="help">{data.vorlagen.ohneKategorie.map((n) => `„${n}“`).join(', ')}: Diese Terminpläne haben in Actual keine Kategorie. Ordne sie dort zu und ruf neu ab.</span>
+					</div>
+				{/if}
+				{#if data.vorlagen.ohneName.length}
+					<div class="field">
+						<span class="label">Ohne Namen, erst in Actual benennen</span>
+						<span class="help">{data.vorlagen.ohneName.map((n) => `„${n}“`).join(', ')}: Diese Terminpläne haben in Actual keinen Namen, die App zeigt nur den Empfänger. Gib ihnen dort einen Namen und ruf neu ab.</span>
+					</div>
+				{/if}
+			{/if}
+		</div>
+	</details>
+{/if}
+
 {#if data.warnungen.length}
 	<div class="section">
 		<div class="section-head"><h2>Prüfung der Einrichtung</h2><span class="aside">{data.warnungen.length} {data.warnungen.length === 1 ? 'Punkt' : 'Punkte'}</span></div>
@@ -535,6 +582,11 @@ ACTUAL_{p.id.toUpperCase()}_SYNC_ID=Sync-ID aus Actual (Einstellungen → Erweit
 	.zuordnung select { flex: 1 1 220px; max-width: 100%; font-size: 15px; background: var(--fill); border: 2px solid transparent; border-radius: 10px; padding: 8px 10px; min-height: 44px; color: var(--label); }
 	.neu { font-size: 12px; font-weight: 700; color: var(--tint); background: var(--tint-soft); border-radius: 999px; padding: 1px 8px; margin-left: 8px; vertical-align: 2px; }
 	.einrichten summary { cursor: pointer; color: var(--tint); font-weight: 600; min-height: 44px; display: flex; align-items: center; }
+	.vorlagen summary { cursor: pointer; font-weight: 700; font-size: 18px; padding: 4px; min-height: 44px; display: flex; align-items: center; }
+	.vorlagen .card { margin-top: 10px; }
+	.vorlage-kopf { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+	.vorlage-kopf .secondary { min-height: 40px; }
+	.vorlage pre { background: var(--fill); border-radius: 10px; padding: 12px; font-size: 14px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; margin: 0; user-select: all; }
 	.einrichten pre { background: var(--fill); border-radius: 10px; padding: 12px; font-size: 13px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; margin: 8px 0; }
 	.swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
 	.swatch { border: 2px solid var(--separator); background: var(--surface); border-radius: 14px; padding: 12px; cursor: pointer; display: grid; gap: 10px; }

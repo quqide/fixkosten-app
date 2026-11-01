@@ -8,6 +8,7 @@ import { angemeldet, hinweisAktionen } from '#lib/server/aktionen.ts';
 import { ActualFehler, actualEingerichtet, ladeKonten, type ActualKonto } from '#lib/server/actual.ts';
 import {
 	ausgeblendeteHinweise,
+	budgetVorlagen,
 	holeAusActual,
 	uebernehmeTerminplaene,
 	warnungenFuer,
@@ -55,6 +56,7 @@ export const load: PageServerLoad = ({ locals }) => {
 		// Wird nachgeliefert, damit die Seite nicht auf Actual warten muss.
 		actualKonten: actual ? kontenOderFehler(id) : null,
 		zuordnung: actual ? zuordnungAnsicht(id) : null,
+		vorlagen: actual ? budgetVorlagen(id) : null,
 		warnungen: warnungenFuer(id),
 		ausgeblendet: ausgeblendeteHinweise(id),
 		person: ladePerson(id),
