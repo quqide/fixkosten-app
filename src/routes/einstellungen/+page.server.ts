@@ -1,5 +1,4 @@
 import { fail } from '@sveltejs/kit';
-import { leseBetrag, leseGanzzahl } from '#lib/eingabe.ts';
 import { angemeldet, hinweisAktionen } from '#lib/server/aktionen.ts';
 import { ActualFehler, actualEingerichtet, ladeKonten, type ActualKonto } from '#lib/server/actual.ts';
 import {
@@ -14,19 +13,13 @@ import {
 import type { PersonId } from '#lib/server/db.ts';
 import {
 	aenderePerson,
-	importiere,
 	ladeActualStand,
 	ladePosten,
 	setzeTerminplan,
 	speichereZuordnung,
 	type ZuordnungEintrag,
-	ladePerson,
-	ladePersonen,
-	letzteAenderungen,
-	type Hell,
-	type Sicherung
+	ladePerson
 } from '#lib/server/repo.ts';
-import { THEMES } from '#lib/themes.ts';
 import type { Actions, PageServerLoad } from './$types';
 
 async function kontenOderFehler(id: PersonId): Promise<{ konten: ActualKonto[]; fehler?: string }> {
@@ -49,46 +42,12 @@ export const load: PageServerLoad = ({ locals }) => {
 		vorlagen: actual ? budgetVorlagen(id) : null,
 		warnungen: warnungenFuer(id),
 		ausgeblendet: ausgeblendeteHinweise(id),
-		person: ladePerson(id),
-		verlauf: letzteAenderungen(15),
-		namen: Object.fromEntries(ladePersonen().map((p) => [p.id, p.name]))
+		person: ladePerson(id)
 	};
 };
 
 export const actions: Actions = {
 	...hinweisAktionen,
-
-	profil: async ({ request, locals }) => {
-		const wer = angemeldet(locals);
-		const f = await request.formData();
-		const name = String(f.get('name') ?? '').trim();
-		const nettoCent = leseBetrag(String(f.get('netto') ?? ''));
-		const ueberweisungstag = leseGanzzahl(String(f.get('tag') ?? ''));
-		const pufferCent = leseBetrag(String(f.get('puffer') ?? '') || '0');
-		const fehler: Record<string, string> = {};
-		if (!name) fehler.name = 'Wie heißt du? Der Name erscheint oben in der Auswahl.';
-		if (nettoCent == null || nettoCent < 0) fehler.netto = 'Bitte dein Nettogehalt in Euro eintragen, zum Beispiel 3450.';
-		if (!ueberweisungstag || ueberweisungstag < 1 || ueberweisungstag > 28) fehler.tag = 'Bitte einen Tag zwischen 1 und 28 eintragen.';
-		if (pufferCent == null || pufferCent < 0) fehler.puffer = 'Bitte einen Betrag in Euro eintragen, zum Beispiel 25.';
-		if (Object.keys(fehler).length) return fail(400, { bereich: 'profil', fehler });
-		const undoId = aenderePerson(
-			wer,
-			{ name, nettoCent: nettoCent!, ueberweisungstag: ueberweisungstag!, pufferCent: pufferCent! },
-			wer,
-			'Gehalt und Sparen geändert'
-		);
-		return { meldung: 'Gespeichert.', undoId };
-	},
-
-	darstellung: async ({ request, locals }) => {
-		const wer = angemeldet(locals);
-		const f = await request.formData();
-		const theme = String(f.get('theme') ?? '');
-		const hell = String(f.get('hell') ?? '') as Hell;
-		if (!Object.hasOwn(THEMES, theme) || !['auto', 'light', 'dark'].includes(hell)) return fail(400, { bereich: 'darstellung', fehler: {} });
-		aenderePerson(wer, { theme, hell }, wer, 'Darstellung geändert');
-		return {};
-	},
 
 	actualKonto: async ({ request, locals }) => {
 		const wer = angemeldet(locals);
@@ -160,22 +119,6 @@ export const actions: Actions = {
 				? `Zuordnung gespeichert, ${geaendert === 1 ? 'ein Posten' : `${geaendert} Posten`} aus Actual übernommen.`
 				: 'Zuordnung gespeichert.'
 		};
-	},
-
-	import: async ({ request, locals }) => {
-		const wer = angemeldet(locals);
-		const datei = (await request.formData()).get('datei');
-		if (!(datei instanceof File) || datei.size === 0) {
-			return fail(400, { bereich: 'import', fehler: { datei: 'Bitte wähle eine Sicherungsdatei aus.' } });
-		}
-		let umbenannt: string[];
-		try {
-			umbenannt = importiere(JSON.parse(await datei.text()) as Sicherung, wer).umbenannt;
-		} catch (e) {
-			const text = e instanceof SyntaxError ? 'Die Datei ist keine gültige Sicherung.' : (e as Error).message;
-			return fail(400, { bereich: 'import', fehler: { datei: text } });
-		}
-		const hinweis = umbenannt.length ? ` Doppelte Namen umbenannt: ${umbenannt.join(', ')}.` : '';
-		return { meldung: `Sicherung eingespielt.${hinweis}` };
 	}
+
 };
