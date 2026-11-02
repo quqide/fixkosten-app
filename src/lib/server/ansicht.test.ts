@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { oeffneDatenbank, setzeDatenbank } from './db';
 import { personAnsicht, rueckstellungenMitStand } from './ansicht';
 import { heute } from '#lib/rechnung/datum.ts';
-import { load as einstellungenLaden } from '../../routes/einstellungen/+page.server';
+import { load as planLaden } from '../../routes/plan/+page.server';
 import { aenderePerson, speichereActualStand, speichereRueckstellungen, type RueckstellungEintrag } from './repo';
 
 const stichtag = '2026-10-30';
@@ -69,10 +69,10 @@ describe('Stand der Rückstellungen', () => {
 		);
 	});
 
-	it('Einstellungen und Übersicht zeigen dieselbe Rate und denselben Status', () => {
+	it('Mein Plan und Übersicht zeigen dieselbe Rate und denselben Status', () => {
 		// Ohne Actual, damit die Seite nichts abruft: eine Rückstellung von Hand, eine mit fehlendem Stand.
 		speichereRueckstellungen('a', [basis, { ...basis, name: 'Urlaub', actualKategorie: null, standCent: 30000 }], 'a');
-		const daten = einstellungenLaden({ locals: { person: 'a' } } as never) as { rueckstellungen: unknown };
+		const daten = planLaden({ locals: { person: 'a' } } as never) as { rueckstellungen: unknown };
 		expect(daten.rueckstellungen).toEqual(personAnsicht('a', heute()).rueckstellungen);
 	});
 
