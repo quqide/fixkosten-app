@@ -18,6 +18,7 @@
 
 <svelte:head><title>Rechner · Fixkosten</title></svelte:head>
 
+<a class="zurueck" href="/plan"><span aria-hidden="true">‹</span> Mein Plan</a>
 <h1>Was wäre, wenn …</h1>
 <p class="lead">Probier aus, wie sich ein neues Gehalt, eine andere Miete oder ein neuer Vertrag auf deinen Monat auswirken.</p>
 <p class="hinweis" role="note"><strong>Hier wird nichts gespeichert.</strong> Deine Daten bleiben, wie sie sind.</p>
@@ -140,6 +141,7 @@
 </div>
 
 <style>
+	.zurueck { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; color: var(--tint); font-weight: 600; text-decoration: none; }
 	.hinweis { margin: -8px 4px 0; font-size: 15px; color: var(--secondary); }
 	.hinweis strong { color: var(--label); }
 	.fehler { margin-top: 18px; padding: 14px 20px; color: var(--warm); font-weight: 600; font-size: 15px; }

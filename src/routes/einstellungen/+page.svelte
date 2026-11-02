@@ -1,8 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import AuftragListe from '#lib/components/AuftragListe.svelte';
 	import Icon from '#lib/components/Icon.svelte';
-	import RuecklageListe from '#lib/components/RuecklageListe.svelte';
 	import { betragFeld, eur, intervallText, zeitpunkt } from '#lib/format.ts';
 	import { THEMES } from '#lib/themes.ts';
 	import { mitRueckmeldung, rueckgaengig, toast, zeigeToast } from '#lib/toast.svelte.ts';
@@ -19,12 +17,6 @@
 
 	let importBestaetigen = $state(false);
 
-	const ziele = $derived([...new Set([...data.rueckstellungen.map((r) => r.eintrag.wkn || r.eintrag.zielkonto || ''), ...data.auftraege.map((a) => a.zielkonto)].filter(Boolean))]);
-
-	const modelle = [
-		{ wert: 1, titel: 'Spaßkonto mit festem Betrag', text: 'Fixkosten gehen direkt vom Gehaltskonto ab. Die App rechnet aus, wie viel aufs Spaßkonto darf.' },
-		{ wert: 2, titel: 'Eigenes Fixkosten-Konto', text: 'Eine feste Monatsrate geht auf ein eigenes Konto. Der Rest auf dem Gehaltskonto ist frei.' }
-	];
 	const hellOptionen = [
 		{ wert: 'auto', name: 'Automatisch' },
 		{ wert: 'light', name: 'Hell' },
@@ -57,19 +49,6 @@
 <h1>Einstellungen</h1>
 <p class="lead">Gilt nur für {p.name}. Die andere Person hat eigene Einstellungen.</p>
 
-<div class="section" style="margin-top:8px">
-	<div class="section-head"><h2>Wie sind deine Konten aufgebaut?</h2></div>
-	<form method="POST" action="?/modus" use:enhance={mitRueckmeldung()} class="choice">
-		{#each modelle as m (m.wert)}
-			<label>
-				<input type="radio" name="modus" value={m.wert} checked={p.modus === m.wert} onchange={(e) => e.currentTarget.form?.requestSubmit()} />
-				<strong>{m.titel}</strong><span>{m.text}</span>
-			</label>
-		{/each}
-		<noscript><button class="secondary" type="submit">Übernehmen</button></noscript>
-	</form>
-</div>
-
 <form method="POST" action="?/profil" use:enhance={mitRueckmeldung()} class="section">
 	<div class="section-head"><h2>Über dich</h2></div>
 	<div class="card">
@@ -90,18 +69,6 @@
 		<div class="field"><button class="primary" type="submit">Speichern</button></div>
 	</div>
 </form>
-
-<section class="section" aria-labelledby="auftraege-titel">
-	<div class="section-head"><h2 id="auftraege-titel">Daueraufträge</h2><span class="aside">am {p.ueberweisungstag}. vom Gehaltskonto</span></div>
-	<div class="card"><AuftragListe auftraege={data.auftraege} basis={data.planBasis} {ziele} /></div>
-	<datalist id="ziele">{#each ziele as z (z)}<option value={z}></option>{/each}</datalist>
-	<p class="note">Die Beträge rechnet die App jeden Monat neu aus. „Was übrig bleibt“ gleicht alle Rundungen aus.</p>
-</section>
-
-<section class="section" aria-labelledby="ruecklagen-titel">
-	<div class="section-head"><h2 id="ruecklagen-titel">Rücklagen</h2><span class="aside">gehen jeden Monat raus</span></div>
-	<div class="card"><RuecklageListe rueckstellungen={data.rueckstellungen} kategorien={data.ausgabeKategorien} /></div>
-</section>
 
 <form method="POST" action="?/darstellung" use:enhance={() => async ({ update }) => update({ reset: false })} class="section">
 	<div class="section-head"><h2>Darstellung</h2><span class="aside">wirkt sofort</span></div>
