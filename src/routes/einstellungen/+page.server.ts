@@ -144,7 +144,7 @@ export const actions: Actions = {
 		const ergebnis = leseRueckstellungen(roh, wer);
 		if ('fehler' in ergebnis) return fail(400, { bereich: 'rueckstellungen', fehler: ergebnis.fehler });
 		const undoId = speichereRueckstellungen(wer, ergebnis.liste, wer);
-		return { meldung: 'Rückstellungen gespeichert.', undoId };
+		return { meldung: 'Rücklagen gespeichert.', undoId };
 	},
 
 	darstellung: async ({ request, locals }) => {
@@ -262,24 +262,27 @@ function leseRueckstellungen(roh: unknown, person: PersonId): { liste: Rueckstel
 		const name = String(r.name ?? '').trim();
 		const art = (['fest', 'faellig', 'ziel'].includes(String(r.art)) ? r.art : 'fest') as RueckstellungEintrag['art'];
 		const betragText = String(r.betrag ?? '').trim();
-		if (!name && !betragText && !String(r.ziel ?? '').trim()) return;
-		const f = (text: string) => void (fehler[`r_${i}`] = text);
-		if (!name) return f('Wofür legst du das Geld zurück?');
+		// Fehler je Rücklage unter r_<index>, das betroffene Feld unter feld_<index> fürs Bearbeitungsfenster.
+		const f = (text: string, feld: 'name' | 'betrag' | 'ziel' | 'faellig') => {
+			fehler[`r_${i}`] = text;
+			fehler[`feld_${i}`] = feld;
+		};
+		if (!name) return f('Wofür legst du das Geld zurück?', 'name');
 		const betragCent = art === 'faellig' ? 0 : leseBetrag(betragText);
-		if (betragCent == null || betragCent < 0) return f(`„${name}“: Bitte den Betrag pro Monat eintragen.`);
+		if (betragCent == null || betragCent < 0) return f(`„${name}“: Bitte den Betrag pro Monat eintragen.`, 'betrag');
 
 		let zielCent: number | null = null;
 		let zielNettoFaktor: number | null = null;
 		const zielText = String(r.ziel ?? '').trim();
 		if (art === 'ziel' && r.zielArt === 'netto') {
 			zielNettoFaktor = leseProzent(zielText);
-			if (!zielNettoFaktor || zielNettoFaktor <= 0) return f(`„${name}“: Wie viele Nettogehälter sollen es sein, zum Beispiel 3?`);
+			if (!zielNettoFaktor || zielNettoFaktor <= 0) return f(`„${name}“: Wie viele Nettogehälter sollen es sein, zum Beispiel 3?`, 'ziel');
 		} else if (art !== 'fest') {
 			zielCent = leseBetrag(zielText);
-			if (!zielCent || zielCent <= 0) return f(`„${name}“: Bitte den Zielbetrag eintragen.`);
+			if (!zielCent || zielCent <= 0) return f(`„${name}“: Bitte den Zielbetrag eintragen.`, 'ziel');
 		}
 		const faellig = art === 'faellig' ? String(r.faellig ?? '') : null;
-		if (art === 'faellig' && !/^\d{4}-\d{2}-\d{2}$/.test(faellig ?? '')) return f(`„${name}“: Wann wird das Geld gebraucht?`);
+		if (art === 'faellig' && !/^\d{4}-\d{2}-\d{2}$/.test(faellig ?? '')) return f(`„${name}“: Wann wird das Geld gebraucht?`, 'faellig');
 
 		const wohin = String(r.wohin ?? '').trim();
 		const istWkn = r.wohinArt === 'wkn';
