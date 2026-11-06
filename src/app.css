@@ -54,6 +54,9 @@ a { color: var(--tint); }
 
 h1 { font: 800 30px/1.15 var(--font); letter-spacing: -0.02em; margin: 28px 0 4px; text-wrap: balance; }
 .lead { color: var(--secondary); margin: 0 0 20px; font-size: 17px; max-width: 34em; }
+/* Zurück-Link oben auf Unterseiten, z. B. „‹ Einstellungen“. */
+.zurueck { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; margin-top: 12px; color: var(--tint); font-weight: 600; text-decoration: none; }
+.zurueck + h1 { margin-top: 4px; }
 
 .card { background: var(--surface); border-radius: var(--r); box-shadow: var(--shadow); }
 .pad { padding: 20px; }

@@ -141,7 +141,6 @@
 </div>
 
 <style>
-	.zurueck { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; color: var(--tint); font-weight: 600; text-decoration: none; }
 	.hinweis { margin: -8px 4px 0; font-size: 15px; color: var(--secondary); }
 	.hinweis strong { color: var(--label); }
 	.fehler { margin-top: 18px; padding: 14px 20px; color: var(--warm); font-weight: 600; font-size: 15px; }
